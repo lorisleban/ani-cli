@@ -35,6 +35,8 @@ pub struct App {
     pub search_results: Vec<AnimeResult>,
     pub search_selected: usize,
     pub search_loading: bool,
+    pub search_dirty: bool,
+    pub search_debounce_deadline: Option<Instant>,
 
     // Detail
     pub selected_anime: Option<AnimeResult>,
@@ -85,6 +87,8 @@ impl App {
             search_results: Vec::new(),
             search_selected: 0,
             search_loading: false,
+            search_dirty: false,
+            search_debounce_deadline: None,
             selected_anime: None,
             episodes: Vec::new(),
             episode_selected: 0,
@@ -127,6 +131,17 @@ impl App {
             Mode::Sub => Mode::Dub,
             Mode::Dub => Mode::Sub,
         };
+    }
+
+    pub fn schedule_search(&mut self, delay_ms: u64) {
+        self.search_dirty = true;
+        self.search_debounce_deadline =
+            Some(Instant::now() + std::time::Duration::from_millis(delay_ms));
+    }
+
+    pub fn cancel_search_schedule(&mut self) {
+        self.search_dirty = false;
+        self.search_debounce_deadline = None;
     }
 
     pub fn toast(&mut self, msg: impl Into<String>, is_error: bool) {

@@ -21,6 +21,8 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 use api::ApiClient;
 use app::{App, Screen};
 
+const SEARCH_DEBOUNCE_MS: u64 = 180;
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     enable_raw_mode()?;
@@ -85,12 +87,47 @@ async fn run_app(
         if !app.running {
             break;
         }
+
+        maybe_run_debounced_search(app, &mut api, terminal).await;
+
         if last_tick.elapsed() >= tick_rate {
             app.tick_spinner();
             last_tick = Instant::now();
         }
     }
     Ok(())
+}
+
+fn reset_search_state(app: &mut App) {
+    app.search_input.clear();
+    app.search_results.clear();
+    app.search_selected = 0;
+    app.cancel_search_schedule();
+}
+
+async fn maybe_run_debounced_search(
+    app: &mut App,
+    api: &mut ApiClient,
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+) {
+    if app.screen != Screen::Search || app.search_loading || !app.search_dirty {
+        return;
+    }
+
+    let ready = app
+        .search_debounce_deadline
+        .map(|deadline| Instant::now() >= deadline)
+        .unwrap_or(false);
+    if !ready {
+        return;
+    }
+
+    app.cancel_search_schedule();
+    if app.search_input.len() >= 2 {
+        run_search(app, api, terminal).await;
+    } else {
+        app.search_results.clear();
+    }
 }
 
 /// Handle keys that work everywhere. Returns true if consumed.
@@ -111,9 +148,7 @@ fn handle_global(app: &mut App, key: KeyEvent) -> bool {
                     return true;
                 }
                 KeyCode::Char('s') => {
-                    app.search_input.clear();
-                    app.search_results.clear();
-                    app.search_selected = 0;
+                    reset_search_state(app);
                     app.navigate(Screen::Search);
                     return true;
                 }
@@ -179,9 +214,7 @@ fn handle_global(app: &mut App, key: KeyEvent) -> bool {
         }
         // `/` opens search from anywhere (except already there)
         KeyCode::Char('/') if app.screen != Screen::Search => {
-            app.search_input.clear();
-            app.search_results.clear();
-            app.search_selected = 0;
+            reset_search_state(app);
             app.navigate(Screen::Search);
             true
         }
@@ -198,9 +231,7 @@ async fn on_home(
     match key.code {
         KeyCode::Char('q') => app.running = false,
         KeyCode::Char('s') => {
-            app.search_input.clear();
-            app.search_results.clear();
-            app.search_selected = 0;
+            reset_search_state(app);
             app.navigate(Screen::Search);
         }
         KeyCode::Char('w') => {
@@ -287,9 +318,10 @@ async fn on_search(
         KeyCode::Backspace => {
             app.search_input.pop();
             if app.search_input.len() >= 2 {
-                run_search(app, api, terminal).await;
+                app.schedule_search(SEARCH_DEBOUNCE_MS);
             } else {
                 app.search_results.clear();
+                app.cancel_search_schedule();
             }
         }
         KeyCode::Enter => {
@@ -313,7 +345,9 @@ async fn on_search(
             if !key.modifiers.contains(KeyModifiers::CONTROL) {
                 app.search_input.push(c);
                 if app.search_input.len() >= 2 {
-                    run_search(app, api, terminal).await;
+                    app.schedule_search(SEARCH_DEBOUNCE_MS);
+                } else {
+                    app.cancel_search_schedule();
                 }
             }
         }
