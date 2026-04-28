@@ -1,13 +1,29 @@
+use base64::prelude::*;
+use openssl::symm::{decrypt, Cipher};
+use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, ACCEPT_LANGUAGE};
 use reqwest::Client;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::process::Command;
 use std::time::Duration;
+use urlencoding::encode;
 
 const ALLANIME_API: &str = "https://api.allanime.day";
 const ALLANIME_BASE: &str = "allanime.day";
-const ALLANIME_REFR: &str = "https://allmanga.to";
+const ALLANIME_REFR: &str = "https://allmanga.to/";
+const ALLANIME_ORIGIN: &str = "https://youtu-chan.com";
 const USER_AGENT: &str =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0";
+const ALLANIME_EP_QUERY_HASH: &str =
+    "d405d0edd690624b66baba3068e0edc3ac90f1597d898a1ec8db4e5c43c00fec";
+
+/// Returns the SHA256 hex digest of the key string used for decryption.
+fn get_allanime_key() -> Vec<u8> {
+    use openssl::sha::Sha256;
+    let mut hasher = Sha256::new();
+    hasher.update(b"Xot36i3lK3:v1");
+    hasher.finish().to_vec()
+}
 
 #[derive(Debug, Clone)]
 pub struct AnimeResult {
@@ -46,10 +62,15 @@ pub struct ApiClient {
 
 impl ApiClient {
     pub fn new(mode: Mode) -> Self {
+        let mut headers = HeaderMap::new();
+        headers.insert(ACCEPT, HeaderValue::from_static("*/*"));
+        headers.insert(ACCEPT_LANGUAGE, HeaderValue::from_static("en-US,en;q=0.9"));
         let client = Client::builder()
             .user_agent(USER_AGENT)
+            .default_headers(headers)
             .timeout(Duration::from_secs(15))
             .connect_timeout(Duration::from_secs(10))
+            .http1_only()
             .build()
             .expect("Failed to create HTTP client");
         Self { client, mode }
@@ -75,6 +96,10 @@ impl ApiClient {
             "query": search_gql
         });
 
+        if std::env::var("ANI_CLI_DEBUG_API").ok().as_deref() == Some("1") {
+            let _ = std::fs::write("/tmp/ani-cli-search-request.json", payload.to_string());
+        }
+
         let resp = self
             .client
             .post(format!("{}/api", ALLANIME_API))
@@ -88,14 +113,22 @@ impl ApiClient {
             .await
             .map_err(|e| format!("Failed to read response: {}", e))?;
 
+        let resp = if is_captcha_response(&resp) {
+            curl_post_api(payload.to_string(), Some("search"))?
+        } else {
+            resp
+        };
+
+        if std::env::var("ANI_CLI_DEBUG_API").ok().as_deref() == Some("1") {
+            let _ = std::fs::write("/tmp/ani-cli-search.json", &resp);
+            eprintln!("DEBUG search api response: {}", resp);
+        }
+
         let json: Value =
             serde_json::from_str(&resp).map_err(|e| format!("Failed to parse JSON: {}", e))?;
 
         let mut results = Vec::new();
-        if let Some(edges) = json
-            .pointer("/data/shows/edges")
-            .and_then(|v| v.as_array())
-        {
+        if let Some(edges) = json.pointer("/data/shows/edges").and_then(|v| v.as_array()) {
             for edge in edges {
                 let id = edge
                     .get("_id")
@@ -126,7 +159,8 @@ impl ApiClient {
     }
 
     pub async fn episodes_list(&self, show_id: &str) -> Result<Vec<String>, String> {
-        let episodes_gql = r#"query ($showId: String!) { show( _id: $showId ) { _id availableEpisodesDetail }}"#;
+        let episodes_gql =
+            r#"query ($showId: String!) { show( _id: $showId ) { _id availableEpisodesDetail }}"#;
 
         let variables = serde_json::json!({ "showId": show_id });
 
@@ -148,15 +182,18 @@ impl ApiClient {
             .await
             .map_err(|e| format!("Failed to read response: {}", e))?;
 
+        let resp = if is_captcha_response(&resp) {
+            curl_post_api(payload.to_string(), Some("episodes"))?
+        } else {
+            resp
+        };
+
         let json: Value =
             serde_json::from_str(&resp).map_err(|e| format!("Failed to parse JSON: {}", e))?;
 
         let mut episodes = Vec::new();
         if let Some(ep_detail) = json.pointer("/data/show/availableEpisodesDetail") {
-            if let Some(eps) = ep_detail
-                .get(self.mode.as_str())
-                .and_then(|v| v.as_array())
-            {
+            if let Some(eps) = ep_detail.get(self.mode.as_str()).and_then(|v| v.as_array()) {
                 for ep in eps {
                     if let Some(ep_str) = ep.as_str() {
                         episodes.push(ep_str.to_string());
@@ -169,19 +206,14 @@ impl ApiClient {
         episodes.sort_by(|a, b| {
             let a_num: f64 = a.parse().unwrap_or(0.0);
             let b_num: f64 = b.parse().unwrap_or(0.0);
-            a_num.partial_cmp(&b_num).unwrap_or(std::cmp::Ordering::Equal)
+            a_num
+                .partial_cmp(&b_num)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         Ok(episodes)
     }
 
-    /// Faithfully replicates the shell script's get_episode_url logic:
-    /// 1. Fetch sourceUrls from GraphQL
-    /// 2. Parse each sourceUrl, match provider names (Default, Luf-Mp4, S-mp4, Yt-mp4)
-    /// 3. Decode the hex-encoded provider path
-    /// 4. Fetch https://allanime.day/<decoded_path> to get actual streaming links
-    /// 5. Parse links from JSON response (link + resolutionStr fields)
-    /// 6. Select best quality
     pub async fn get_episode_url(
         &self,
         show_id: &str,
@@ -196,73 +228,133 @@ impl ApiClient {
             "episodeString": episode
         });
 
+        let query_ext = serde_json::json!({
+            "persistedQuery": {
+                "version": 1,
+                "sha256Hash": ALLANIME_EP_QUERY_HASH
+            }
+        });
+
         let payload = serde_json::json!({
-            "variables": variables,
+            "variables": variables.clone(),
             "query": episode_gql
         });
 
-        let resp = self
+        let api_url = format!(
+            "{}/api?variables={}&extensions={}",
+            ALLANIME_API,
+            encode(&variables.to_string()),
+            encode(&query_ext.to_string())
+        );
+
+        if std::env::var("ANI_CLI_DEBUG_API").ok().as_deref() == Some("1") {
+            let _ = std::fs::write("/tmp/ani-cli-episode-request.json", payload.to_string());
+            let _ = std::fs::write("/tmp/ani-cli-episode-persisted-url.txt", &api_url);
+        }
+
+        let mut resp = self
             .client
-            .post(format!("{}/api", ALLANIME_API))
+            .get(&api_url)
             .header("Referer", ALLANIME_REFR)
-            .header("Content-Type", "application/json")
-            .body(payload.to_string())
+            .header("Origin", ALLANIME_ORIGIN)
             .send()
             .await
-            .map_err(|e| format!("Request failed: {}", e))?
+            .map_err(|e| format!("Persisted episode request failed: {}", e))?
             .text()
             .await
-            .map_err(|e| format!("Failed to read response: {}", e))?;
+            .map_err(|e| format!("Failed to read persisted episode response: {}", e))?;
 
-        // The shell script does: tr '{}' '\n' | sed ... to extract sourceName:encodedUrl pairs
-        // We parse the JSON properly instead
-        let json: Value =
-            serde_json::from_str(&resp).map_err(|e| format!("Failed to parse JSON: {}", e))?;
+        if is_captcha_response(&resp) {
+            resp = curl_get(&api_url, Some("episode-persisted"), Some(ALLANIME_ORIGIN))?;
+        }
 
-        let source_urls = json
-            .pointer("/data/episode/sourceUrls")
-            .and_then(|v| v.as_array())
-            .ok_or("No source URLs found")?;
+        if resp.trim().is_empty() || !resp.contains("tobeparsed") {
+            resp = self
+                .client
+                .post(format!("{}/api", ALLANIME_API))
+                .header("Referer", ALLANIME_REFR)
+                .header("Content-Type", "application/json")
+                .body(payload.to_string())
+                .send()
+                .await
+                .map_err(|e| format!("Fallback episode request failed: {}", e))?
+                .text()
+                .await
+                .map_err(|e| format!("Failed to read fallback episode response: {}", e))?;
 
-        // Extract provider entries: (sourceName, decoded_provider_path)
-        let mut providers: Vec<(String, String)> = Vec::new();
+            if is_captcha_response(&resp) {
+                resp = curl_post_api(payload.to_string(), Some("episode"))?;
+            }
+        }
 
-        for source in source_urls {
-            let source_url = source
-                .get("sourceUrl")
+        if std::env::var("ANI_CLI_DEBUG_API").ok().as_deref() == Some("1") {
+            let _ = std::fs::write("/tmp/ani-cli-episode.json", &resp);
+            eprintln!("DEBUG episode api response: {}", resp);
+        }
+
+        let mut provider_data = Vec::new();
+
+        if let Some(tobeparsed) = extract_tobeparsed_from_raw(&resp) {
+            provider_data = self.decode_tobeparsed(&tobeparsed)?;
+        } else if let Ok(json) = serde_json::from_str::<Value>(&resp) {
+            if let Some(tobeparsed) = json
+                .pointer("/data/episode/tobeparsed")
                 .and_then(|v| v.as_str())
-                .unwrap_or("");
-            let source_name = source
-                .get("sourceName")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-
-            if source_url.starts_with("--") {
-                let decoded = decode_provider_url(&source_url[2..]);
-                if !decoded.is_empty() {
-                    providers.push((source_name.to_string(), decoded));
+            {
+                provider_data = self.decode_tobeparsed(tobeparsed)?;
+            } else if let Some(source_urls) = json
+                .pointer("/data/episode/sourceUrls")
+                .and_then(|v| v.as_array())
+            {
+                for source in source_urls {
+                    let source_url = source
+                        .get("sourceUrl")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let source_name = source
+                        .get("sourceName")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    if source_url.starts_with("--") {
+                        let decoded = decode_provider_url(&source_url[2..]);
+                        if !decoded.is_empty() {
+                            provider_data.push((source_name.to_string(), decoded));
+                        }
+                    }
                 }
             }
         }
 
-        // Shell script checks providers in order: Default, Yt-mp4, S-mp4, Luf-Mp4
-        // Try all providers concurrently with timeout, collect all links
-        let mut all_links: Vec<(String, String, Option<String>)> = Vec::new(); // (quality, url, referer)
+        if provider_data.is_empty() {
+            provider_data = extract_source_pairs_from_raw(&resp)
+                .into_iter()
+                .map(|(name, encoded)| (name, decode_provider_url(&encoded)))
+                .filter(|(_, decoded)| !decoded.is_empty())
+                .collect();
+        }
 
-        for (_provider_name, provider_path) in &providers {
-            // The shell uses: curl -e "$allanime_refr" -s "https://${allanime_base}$provider_id"
-            let provider_url = format!("https://{}{}", ALLANIME_BASE, provider_path);
+        if provider_data.is_empty() {
+            if std::env::var("ANI_CLI_DEBUG_API").ok().as_deref() == Some("1") {
+                eprintln!("DEBUG no provider data. raw response len: {}", resp.len());
+            }
+            return Err("No source URLs found".to_string());
+        }
 
-            match self.fetch_provider_links(&provider_url).await {
+        let mut all_links: Vec<(String, String, Option<String>)> = Vec::new();
+
+        for (source_name, provider_path) in &provider_data {
+            let provider_url = if provider_path.starts_with("https://") {
+                provider_path.clone()
+            } else {
+                format!("https://{}{}", ALLANIME_BASE, provider_path)
+            };
+            match self.fetch_provider_links(source_name, &provider_url).await {
                 Ok(links) => {
                     for (qual, url, refr) in links {
                         all_links.push((qual, url, refr));
                     }
                 }
-                Err(_) => {
-                    // Provider failed, try next
-                    continue;
-                }
+                Err(_) => continue,
             }
         }
 
@@ -270,14 +362,12 @@ impl ApiClient {
             return Err("No valid streaming links found".to_string());
         }
 
-        // Sort by quality (highest first)
         all_links.sort_by(|a, b| {
             let a_num: u32 = a.0.trim_end_matches('p').parse().unwrap_or(0);
             let b_num: u32 = b.0.trim_end_matches('p').parse().unwrap_or(0);
             b_num.cmp(&a_num)
         });
 
-        // Select quality
         let selected = match quality {
             "best" => all_links.first(),
             "worst" => all_links.last(),
@@ -298,12 +388,79 @@ impl ApiClient {
         }
     }
 
-    /// Fetches a provider endpoint and extracts streaming links.
-    /// Replicates the shell script's get_links() function.
+    fn decode_tobeparsed(&self, blob: &str) -> Result<Vec<(String, String)>, String> {
+        let data = BASE64_STANDARD
+            .decode(blob)
+            .map_err(|e| format!("Base64 decode failed: {}", e))?;
+        if data.len() < 13 + 16 {
+            return Err("Payload too short".to_string());
+        }
+
+        let key = get_allanime_key();
+        let iv = &data[1..13];
+        let mut ctr = [0u8; 16];
+        ctr[..12].copy_from_slice(iv);
+        ctr[12] = 0;
+        ctr[13] = 0;
+        ctr[14] = 0;
+        ctr[15] = 2; // iv + 00000002
+
+        let ct_len = data.len() - 13 - 16;
+        let ct = &data[13..13 + ct_len];
+
+        let plain_bytes = decrypt(Cipher::aes_256_ctr(), &key, Some(&ctr), ct)
+            .map_err(|e| format!("AES decryption failed: {}", e))?;
+
+        let plain = String::from_utf8_lossy(&plain_bytes);
+
+        let mut results = Vec::new();
+        // The plain text contains a series of JSON-like structures
+        // Format: {"sourceUrl":"--<encoded>","sourceName":"<name>",...}
+        // We can parse it roughly using splits since it's a stream of objects
+        for part in plain.split('}') {
+            if part.contains("\"sourceUrl\":\"--") {
+                let url = part
+                    .split("\"sourceUrl\":\"--")
+                    .nth(1)
+                    .and_then(|s| s.split('"').next())
+                    .unwrap_or("");
+                let name = part
+                    .split("\"sourceName\":\"")
+                    .nth(1)
+                    .and_then(|s| s.split('"').next())
+                    .unwrap_or("");
+                if !url.is_empty() {
+                    results.push((name.to_string(), decode_provider_url(url)));
+                }
+            }
+        }
+
+        if std::env::var("ANI_CLI_DEBUG_API").ok().as_deref() == Some("1") {
+            eprintln!("DEBUG tobeparsed decoded entries: {}", results.len());
+        }
+
+        Ok(results)
+    }
+
     async fn fetch_provider_links(
         &self,
+        source_name: &str,
         url: &str,
     ) -> Result<Vec<(String, String, Option<String>)>, String> {
+        // Some providers hand us a direct playable URL (for example tools.fast4speed.rsvp).
+        // Do not fetch those as text first; just return them as stream candidates.
+        if url.contains("tools.fast4speed.rsvp") {
+            return Ok(vec![(
+                "Yt".to_string(),
+                url.to_string(),
+                Some(ALLANIME_REFR.to_string()),
+            )]);
+        }
+
+        if url.contains(".mp4") || url.contains(".m3u8") {
+            return Ok(vec![("auto".to_string(), url.to_string(), None)]);
+        }
+
         let resp = self
             .client
             .get(url)
@@ -317,33 +474,26 @@ impl ApiClient {
 
         let mut links: Vec<(String, String, Option<String>)> = Vec::new();
 
-        // Try to parse as JSON
+        if source_name.contains("Fm-mp4") || source_name.to_lowercase().contains("filemoon") {
+            links = parse_filemoon_links(&resp)?;
+            return Ok(links);
+        }
+
         if let Ok(json) = serde_json::from_str::<Value>(&resp) {
-            // Pattern 1: JSON with "links" array containing {link, resolutionStr}
-            // This is the most common pattern (used by Default/wixmp, Luf-Mp4/hianime)
             if let Some(links_arr) = json.get("links").and_then(|v| v.as_array()) {
                 for link_obj in links_arr {
-                    let link = link_obj
-                        .get("link")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
+                    let link = link_obj.get("link").and_then(|v| v.as_str()).unwrap_or("");
                     let resolution = link_obj
                         .get("resolutionStr")
                         .and_then(|v| v.as_str())
                         .unwrap_or("auto");
-                    let _hls_info = link_obj.get("hls");
-
                     if !link.is_empty() {
-                        // Check if this is a master m3u8 link — extract the Referer from response
-                        let refr = if link.contains("master.m3u8") || link.contains(".m3u8") {
-                            // Check for Referer in the response
-                            json.get("links")
-                                .and_then(|v| v.as_array())
-                                .and_then(|arr| arr.iter().find_map(|obj| {
-                                    obj.get("Referer").and_then(|v| v.as_str()).map(|s| s.to_string())
-                                }))
+                        let refr = if link.contains(".m3u8") {
+                            link_obj
+                                .get("Referer")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string())
                                 .or_else(|| {
-                                    // Try rawUrls or headers for the referer
                                     json.pointer("/headers/Referer")
                                         .and_then(|v| v.as_str())
                                         .map(|s| s.to_string())
@@ -351,45 +501,106 @@ impl ApiClient {
                         } else {
                             None
                         };
-
                         links.push((resolution.to_string(), link.to_string(), refr));
                     }
                 }
             }
         }
 
-        // If the response isn't JSON or has no links array, check if it's a redirect/direct URL
-        if links.is_empty() {
-            // Check if the URL itself is a direct video link
-            if url.contains(".mp4") || url.contains(".m3u8") {
-                links.push(("auto".to_string(), url.to_string(), None));
-            }
+        if links.is_empty() && (url.contains(".mp4") || url.contains(".m3u8")) {
+            links.push(("auto".to_string(), url.to_string(), None));
         }
 
         Ok(links)
     }
 }
 
-/// Decode the AllAnime provider URL cipher (port of shell script's hex decode)
 fn decode_provider_url(encoded: &str) -> String {
     let hex_map: HashMap<&str, &str> = [
-        ("79", "A"), ("7a", "B"), ("7b", "C"), ("7c", "D"), ("7d", "E"),
-        ("7e", "F"), ("7f", "G"), ("70", "H"), ("71", "I"), ("72", "J"),
-        ("73", "K"), ("74", "L"), ("75", "M"), ("76", "N"), ("77", "O"),
-        ("68", "P"), ("69", "Q"), ("6a", "R"), ("6b", "S"), ("6c", "T"),
-        ("6d", "U"), ("6e", "V"), ("6f", "W"), ("60", "X"), ("61", "Y"),
-        ("62", "Z"), ("59", "a"), ("5a", "b"), ("5b", "c"), ("5c", "d"),
-        ("5d", "e"), ("5e", "f"), ("5f", "g"), ("50", "h"), ("51", "i"),
-        ("52", "j"), ("53", "k"), ("54", "l"), ("55", "m"), ("56", "n"),
-        ("57", "o"), ("48", "p"), ("49", "q"), ("4a", "r"), ("4b", "s"),
-        ("4c", "t"), ("4d", "u"), ("4e", "v"), ("4f", "w"), ("40", "x"),
-        ("41", "y"), ("42", "z"), ("08", "0"), ("09", "1"), ("0a", "2"),
-        ("0b", "3"), ("0c", "4"), ("0d", "5"), ("0e", "6"), ("0f", "7"),
-        ("00", "8"), ("01", "9"), ("15", "-"), ("16", "."), ("67", "_"),
-        ("46", "~"), ("02", ":"), ("17", "/"), ("07", "?"), ("1b", "#"),
-        ("63", "["), ("65", "]"), ("78", "@"), ("19", "!"), ("1c", "$"),
-        ("1e", "&"), ("10", "("), ("11", ")"), ("12", "*"), ("13", "+"),
-        ("14", ","), ("03", ";"), ("05", "="), ("1d", "%"),
+        ("79", "A"),
+        ("7a", "B"),
+        ("7b", "C"),
+        ("7c", "D"),
+        ("7d", "E"),
+        ("7e", "F"),
+        ("7f", "G"),
+        ("70", "H"),
+        ("71", "I"),
+        ("72", "J"),
+        ("73", "K"),
+        ("74", "L"),
+        ("75", "M"),
+        ("76", "N"),
+        ("77", "O"),
+        ("68", "P"),
+        ("69", "Q"),
+        ("6a", "R"),
+        ("6b", "S"),
+        ("6c", "T"),
+        ("6d", "U"),
+        ("6e", "V"),
+        ("6f", "W"),
+        ("60", "X"),
+        ("61", "Y"),
+        ("62", "Z"),
+        ("59", "a"),
+        ("5a", "b"),
+        ("5b", "c"),
+        ("5c", "d"),
+        ("5d", "e"),
+        ("5e", "f"),
+        ("5f", "g"),
+        ("50", "h"),
+        ("51", "i"),
+        ("52", "j"),
+        ("53", "k"),
+        ("54", "l"),
+        ("55", "m"),
+        ("56", "n"),
+        ("57", "o"),
+        ("48", "p"),
+        ("49", "q"),
+        ("4a", "r"),
+        ("4b", "s"),
+        ("4c", "t"),
+        ("4d", "u"),
+        ("4e", "v"),
+        ("4f", "w"),
+        ("40", "x"),
+        ("41", "y"),
+        ("42", "z"),
+        ("08", "0"),
+        ("09", "1"),
+        ("0a", "2"),
+        ("0b", "3"),
+        ("0c", "4"),
+        ("0d", "5"),
+        ("0e", "6"),
+        ("0f", "7"),
+        ("00", "8"),
+        ("01", "9"),
+        ("15", "-"),
+        ("16", "."),
+        ("67", "_"),
+        ("46", "~"),
+        ("02", ":"),
+        ("17", "/"),
+        ("07", "?"),
+        ("1b", "#"),
+        ("63", "["),
+        ("65", "]"),
+        ("78", "@"),
+        ("19", "!"),
+        ("1c", "$"),
+        ("1e", "&"),
+        ("10", "("),
+        ("11", ")"),
+        ("12", "*"),
+        ("13", "+"),
+        ("14", ","),
+        ("03", ";"),
+        ("05", "="),
+        ("1d", "%"),
     ]
     .iter()
     .cloned()
@@ -406,9 +617,215 @@ fn decode_provider_url(encoded: &str) -> String {
         }
         i += 2;
     }
+    decoded.replace("/clock", "/clock.json")
+}
 
-    // Replace /clock with /clock.json (matches shell script behavior)
-    decoded = decoded.replace("/clock", "/clock.json");
+fn b64url_decode(input: &str) -> Result<Vec<u8>, String> {
+    let mut normalized = input.replace('-', "+").replace('_', "/");
+    while normalized.len() % 4 != 0 {
+        normalized.push('=');
+    }
+    BASE64_STANDARD
+        .decode(normalized.as_bytes())
+        .map_err(|e| format!("Base64url decode failed: {}", e))
+}
 
-    decoded
+fn parse_filemoon_links(resp: &str) -> Result<Vec<(String, String, Option<String>)>, String> {
+    let json: Value =
+        serde_json::from_str(resp).map_err(|e| format!("Invalid Filemoon response JSON: {}", e))?;
+
+    let iv = json
+        .get("iv")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "Missing Filemoon iv".to_string())?;
+    let payload = json
+        .get("payload")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "Missing Filemoon payload".to_string())?;
+    let key_parts = json
+        .get("key_parts")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| "Missing Filemoon key_parts".to_string())?;
+
+    if key_parts.len() < 2 {
+        return Err("Invalid Filemoon key_parts".to_string());
+    }
+
+    let kp1 = key_parts[0]
+        .as_str()
+        .ok_or_else(|| "Invalid Filemoon key_parts[0]".to_string())?;
+    let kp2 = key_parts[1]
+        .as_str()
+        .ok_or_else(|| "Invalid Filemoon key_parts[1]".to_string())?;
+
+    let key = [b64url_decode(kp1)?, b64url_decode(kp2)?].concat();
+    if key.len() != 32 {
+        return Err(format!("Invalid Filemoon key length: {}", key.len()));
+    }
+
+    let iv_bytes = b64url_decode(iv)?;
+    if iv_bytes.len() != 12 {
+        return Err(format!("Invalid Filemoon iv length: {}", iv_bytes.len()));
+    }
+
+    let mut ctr = [0u8; 16];
+    ctr[..12].copy_from_slice(&iv_bytes);
+    ctr[15] = 2;
+
+    let payload_bytes = b64url_decode(payload)?;
+    if payload_bytes.len() <= 16 {
+        return Err("Filemoon payload too short".to_string());
+    }
+
+    let ct = &payload_bytes[..payload_bytes.len() - 16];
+    let plain_bytes = decrypt(Cipher::aes_256_ctr(), &key, Some(&ctr), ct)
+        .map_err(|e| format!("Filemoon AES decryption failed: {}", e))?;
+    let plain = String::from_utf8_lossy(&plain_bytes);
+
+    let parsed: Value = serde_json::from_str(&plain)
+        .map_err(|e| format!("Invalid Filemoon plaintext JSON: {}", e))?;
+    let streams = parsed
+        .as_array()
+        .ok_or_else(|| "Filemoon plaintext is not an array".to_string())?;
+
+    let mut links = Vec::new();
+    for stream in streams {
+        let url = stream
+            .get("url")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let height = stream.get("height").and_then(|v| v.as_u64()).unwrap_or(0);
+        if !url.is_empty() {
+            links.push((
+                format!("{height}p"),
+                url.replace("\\u0026", "&").replace("\\u003D", "="),
+                None,
+            ));
+        }
+    }
+
+    links.sort_by(|a, b| {
+        let a_num: u32 = a.0.trim_end_matches('p').parse().unwrap_or(0);
+        let b_num: u32 = b.0.trim_end_matches('p').parse().unwrap_or(0);
+        b_num.cmp(&a_num)
+    });
+
+    Ok(links)
+}
+
+fn extract_tobeparsed_from_raw(raw: &str) -> Option<String> {
+    let needle = "\"tobeparsed\":\"";
+    let start = raw.find(needle)? + needle.len();
+    let rest = &raw[start..];
+    let end = rest.find('"')?;
+    let blob = &rest[..end];
+    if blob.is_empty() {
+        None
+    } else {
+        Some(blob.to_string())
+    }
+}
+
+fn extract_source_pairs_from_raw(raw: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let mut cursor = raw;
+    while let Some(url_pos) = cursor.find("\"sourceUrl\":\"--") {
+        let after_url = &cursor[url_pos + "\"sourceUrl\":\"--".len()..];
+        let url_end = match after_url.find('"') {
+            Some(idx) => idx,
+            None => break,
+        };
+        let encoded = &after_url[..url_end];
+        let after_url = &after_url[url_end..];
+
+        let name_pos = match after_url.find("\"sourceName\":\"") {
+            Some(idx) => idx,
+            None => {
+                cursor = &after_url[1..];
+                continue;
+            }
+        };
+        let after_name = &after_url[name_pos + "\"sourceName\":\"".len()..];
+        let name_end = match after_name.find('"') {
+            Some(idx) => idx,
+            None => break,
+        };
+        let name = &after_name[..name_end];
+
+        if !encoded.is_empty() {
+            out.push((name.to_string(), encoded.to_string()));
+        }
+
+        cursor = &after_name[name_end..];
+    }
+    out
+}
+
+fn is_captcha_response(resp: &str) -> bool {
+    resp.contains("NEED_CAPTCHA") || resp.contains("Just a moment") || resp.contains("cf-chl")
+}
+
+fn curl_post_api(payload: String, label: Option<&str>) -> Result<String, String> {
+    let api_url = format!("{}/api", ALLANIME_API);
+    let output = Command::new("curl")
+        .args([
+            "-e",
+            ALLANIME_REFR,
+            "-s",
+            "-H",
+            "Content-Type: application/json",
+            "-X",
+            "POST",
+            &api_url,
+            "--data",
+            &payload,
+            "-A",
+            USER_AGENT,
+        ])
+        .output()
+        .map_err(|e| format!("Failed to run curl: {}", e))?;
+
+    if !output.status.success() {
+        return Err("curl request failed".to_string());
+    }
+
+    let body =
+        String::from_utf8(output.stdout).map_err(|e| format!("Invalid curl response: {}", e))?;
+
+    if std::env::var("ANI_CLI_DEBUG_API").ok().as_deref() == Some("1") {
+        if let Some(label) = label {
+            let _ = std::fs::write(format!("/tmp/ani-cli-{}-curl.json", label), &body);
+        }
+    }
+
+    Ok(body)
+}
+
+fn curl_get(url: &str, label: Option<&str>, origin: Option<&str>) -> Result<String, String> {
+    let mut cmd = Command::new("curl");
+    cmd.args(["-e", ALLANIME_REFR, "-s", "-A", USER_AGENT]);
+    if let Some(origin) = origin {
+        cmd.args(["-H", &format!("Origin: {}", origin)]);
+    }
+    cmd.arg(url);
+
+    let output = cmd
+        .output()
+        .map_err(|e| format!("Failed to run curl: {}", e))?;
+
+    if !output.status.success() {
+        return Err("curl request failed".to_string());
+    }
+
+    let body =
+        String::from_utf8(output.stdout).map_err(|e| format!("Invalid curl response: {}", e))?;
+
+    if std::env::var("ANI_CLI_DEBUG_API").ok().as_deref() == Some("1") {
+        if let Some(label) = label {
+            let _ = std::fs::write(format!("/tmp/ani-cli-{}-curl.json", label), &body);
+        }
+    }
+
+    Ok(body)
 }
