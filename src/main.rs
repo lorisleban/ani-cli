@@ -240,15 +240,13 @@ async fn on_home(
             app.navigate(Screen::WatchHistory);
         }
         KeyCode::Char('d') => app.toggle_mode(),
-        KeyCode::Up | KeyCode::Char('k') => {
-            if app.home_selected > 0 {
-                app.home_selected -= 1;
-            }
+        KeyCode::Up | KeyCode::Char('k') if app.home_selected > 0 => {
+            app.home_selected -= 1;
         }
-        KeyCode::Down | KeyCode::Char('j') => {
-            if app.home_selected + 1 < app.continue_watching.len() {
-                app.home_selected += 1;
-            }
+        KeyCode::Down | KeyCode::Char('j')
+            if app.home_selected + 1 < app.continue_watching.len() =>
+        {
+            app.home_selected += 1;
         }
         KeyCode::Enter | KeyCode::Char('r') => {
             if let Some(entry) = app.continue_watching.get(app.home_selected).cloned() {
@@ -305,15 +303,11 @@ async fn on_search(
 ) {
     match key.code {
         KeyCode::Esc => app.go_back(),
-        KeyCode::Up => {
-            if app.search_selected > 0 {
-                app.search_selected -= 1;
-            }
+        KeyCode::Up if app.search_selected > 0 => {
+            app.search_selected -= 1;
         }
-        KeyCode::Down => {
-            if app.search_selected + 1 < app.search_results.len() {
-                app.search_selected += 1;
-            }
+        KeyCode::Down if app.search_selected + 1 < app.search_results.len() => {
+            app.search_selected += 1;
         }
         KeyCode::Backspace => {
             app.search_input.pop();
@@ -340,15 +334,13 @@ async fn on_search(
                 app.episodes_loading = false;
             }
         }
-        KeyCode::Char(c) => {
-            // Only treat as text if not a control modifier
-            if !key.modifiers.contains(KeyModifiers::CONTROL) {
-                app.search_input.push(c);
-                if app.search_input.len() >= 2 {
-                    app.schedule_search(SEARCH_DEBOUNCE_MS);
-                } else {
-                    app.cancel_search_schedule();
-                }
+        // Only treat as text if not a control modifier
+        KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.search_input.push(c);
+            if app.search_input.len() >= 2 {
+                app.schedule_search(SEARCH_DEBOUNCE_MS);
+            } else {
+                app.cancel_search_schedule();
             }
         }
         _ => {}
@@ -382,25 +374,17 @@ async fn on_detail(
     let cols = grid_cols(app);
     match key.code {
         KeyCode::Esc => app.go_back(),
-        KeyCode::Up | KeyCode::Char('k') => {
-            if app.episode_selected >= cols {
-                app.episode_selected -= cols;
-            }
+        KeyCode::Up | KeyCode::Char('k') if app.episode_selected >= cols => {
+            app.episode_selected -= cols;
         }
-        KeyCode::Down | KeyCode::Char('j') => {
-            if app.episode_selected + cols < app.episodes.len() {
-                app.episode_selected += cols;
-            }
+        KeyCode::Down | KeyCode::Char('j') if app.episode_selected + cols < app.episodes.len() => {
+            app.episode_selected += cols;
         }
-        KeyCode::Left | KeyCode::Char('h') => {
-            if app.episode_selected > 0 {
-                app.episode_selected -= 1;
-            }
+        KeyCode::Left | KeyCode::Char('h') if app.episode_selected > 0 => {
+            app.episode_selected -= 1;
         }
-        KeyCode::Right | KeyCode::Char('l') => {
-            if app.episode_selected + 1 < app.episodes.len() {
-                app.episode_selected += 1;
-            }
+        KeyCode::Right | KeyCode::Char('l') if app.episode_selected + 1 < app.episodes.len() => {
+            app.episode_selected += 1;
         }
         KeyCode::Char('d') => {
             app.toggle_mode();
@@ -464,15 +448,11 @@ async fn play_selected(
 fn on_history(app: &mut App, key: KeyEvent) {
     match key.code {
         KeyCode::Esc => app.go_back(),
-        KeyCode::Up | KeyCode::Char('k') => {
-            if app.history_selected > 0 {
-                app.history_selected -= 1;
-            }
+        KeyCode::Up | KeyCode::Char('k') if app.history_selected > 0 => {
+            app.history_selected -= 1;
         }
-        KeyCode::Down | KeyCode::Char('j') => {
-            if app.history_selected + 1 < app.history.len() {
-                app.history_selected += 1;
-            }
+        KeyCode::Down | KeyCode::Char('j') if app.history_selected + 1 < app.history.len() => {
+            app.history_selected += 1;
         }
         KeyCode::Char('x') => {
             if let Some(entry) = app.history.get(app.history_selected) {
@@ -486,12 +466,10 @@ fn on_history(app: &mut App, key: KeyEvent) {
                 }
             }
         }
-        KeyCode::Char('X') => {
-            if app.db.delete_all().is_ok() {
-                app.refresh_history();
-                app.history_selected = 0;
-                app.toast("history cleared", false);
-            }
+        KeyCode::Char('X') if app.db.delete_all().is_ok() => {
+            app.refresh_history();
+            app.history_selected = 0;
+            app.toast("history cleared", false);
         }
         _ => {}
     }
