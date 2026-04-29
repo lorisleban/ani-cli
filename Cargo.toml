@@ -16,3 +16,6 @@ dirs = "6"
 urlencoding = "2"
 regex = "1"
 chrono = { version = "0.4", features = ["serde"] }
+openssl = "0.10.78"
+base64 = "0.22.1"
+hex = "0.4.3"
