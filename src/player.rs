@@ -271,14 +271,18 @@ fn spawn_detached(cmd: &mut Command) -> std::io::Result<()> {
         // Keep Unix detached semantics close to the original nohup-based flow.
         cmd.stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .pre_exec(|| {
-                if unsafe { libc::setsid() } == -1 {
+            .stderr(Stdio::null());
+
+        unsafe {
+            cmd.pre_exec(|| {
+                if libc::setsid() == -1 {
                     return Err(std::io::Error::last_os_error());
                 }
                 Ok(())
-            })
-            .spawn()?;
+            });
+        }
+
+        cmd.spawn()?;
         Ok(())
     }
 }
