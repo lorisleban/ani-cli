@@ -9,11 +9,8 @@ pub enum PlayerType {
 
 impl PlayerType {
     pub fn detect() -> Self {
-        #[cfg(target_os = "macos")]
-        {
-            if std::path::Path::new("/Applications/IINA.app/Contents/MacOS/iina-cli").exists() {
-                return PlayerType::Iina;
-            }
+        if std::path::Path::new("/Applications/IINA.app/Contents/MacOS/iina-cli").exists() {
+            return PlayerType::Iina;
         }
         if which("mpv") {
             return PlayerType::Mpv;
