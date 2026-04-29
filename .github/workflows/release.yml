@@ -33,19 +33,26 @@ jobs:
           - runner: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             asset_name: ani-cli-linux-x86_64
+            binary_name: ani-cli
+            archive_name: ani-cli-linux-x86_64.tar.gz
           - runner: macos-13
             target: x86_64-apple-darwin
             asset_name: ani-cli-macos-x86_64
+            binary_name: ani-cli
+            archive_name: ani-cli-macos-x86_64.tar.gz
           - runner: macos-14
             target: aarch64-apple-darwin
             asset_name: ani-cli-macos-aarch64
+            binary_name: ani-cli
+            archive_name: ani-cli-macos-aarch64.tar.gz
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            asset_name: ani-cli-windows-x86_64
+            binary_name: ani-cli.exe
+            archive_name: ani-cli-windows-x86_64.zip
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Linux build deps
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -56,13 +63,23 @@ jobs:
       - name: Build release binary
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Package archive
+      - name: Package archive (Unix)
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           mkdir -p dist
-          cp "target/${{ matrix.target }}/release/ani-cli" "dist/ani-cli"
+          cp "target/${{ matrix.target }}/release/${{ matrix.binary_name }}" "dist/${{ matrix.binary_name }}"
           cp README.md LICENSE disclaimer.md "dist/"
-          tar -czf "${{ matrix.asset_name }}.tar.gz" -C dist .
+          tar -czf "${{ matrix.archive_name }}" -C dist .
+
+      - name: Package archive (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/${{ matrix.binary_name }}" "dist/${{ matrix.binary_name }}"
+          Copy-Item README.md, LICENSE, disclaimer.md dist
+          Compress-Archive -Path dist\* -DestinationPath "${{ matrix.archive_name }}" -Force
 
       - name: Upload release asset
         env:
@@ -70,4 +87,4 @@ jobs:
         shell: bash
         run: |
           tag="${GITHUB_REF_NAME:-${GITHUB_REF#refs/tags/}}"
-          gh release upload "$tag" "${{ matrix.asset_name }}.tar.gz" --clobber
+          gh release upload "$tag" "${{ matrix.archive_name }}" --clobber
