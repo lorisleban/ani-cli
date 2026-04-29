@@ -17,10 +17,7 @@ pub struct Database {
 
 impl Database {
     pub fn new() -> Result<Self> {
-        let db_path = Self::db_path();
-        if let Some(parent) = db_path.parent() {
-            std::fs::create_dir_all(parent).ok();
-        }
+        let db_path = Self::resolve_db_path()?;
         let conn = Connection::open(&db_path)?;
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS watch_history (
@@ -36,11 +33,40 @@ impl Database {
         Ok(Self { conn })
     }
 
-    fn db_path() -> PathBuf {
-        let data_dir = dirs::data_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("ani-cli");
-        data_dir.join("history.db")
+    fn resolve_db_path() -> Result<PathBuf> {
+        for path in Self::candidate_paths() {
+            if let Some(parent) = path.parent() {
+                if std::fs::create_dir_all(parent).is_err() {
+                    continue;
+                }
+            }
+
+            if Connection::open(&path).is_ok() {
+                return Ok(path);
+            }
+        }
+
+        Err(rusqlite::Error::InvalidPath(
+            "unable to create or open any database path".into(),
+        ))
+    }
+
+    fn candidate_paths() -> Vec<PathBuf> {
+        let mut paths = Vec::new();
+
+        if let Some(data_dir) = dirs::data_dir() {
+            paths.push(data_dir.join("ani-cli").join("history.db"));
+        }
+
+        if let Some(local_data_dir) = dirs::data_local_dir() {
+            let candidate = local_data_dir.join("ani-cli").join("history.db");
+            if !paths.contains(&candidate) {
+                paths.push(candidate);
+            }
+        }
+
+        paths.push(PathBuf::from(".").join(".ani-cli").join("history.db"));
+        paths
     }
 
     pub fn upsert_watch(

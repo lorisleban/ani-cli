@@ -25,12 +25,12 @@ This rewrite is intentionally narrower than the upstream shell script.
 
 ## Platform status
 
-Right now this codebase is best treated as Unix-like first.
+Right now this codebase is still Unix-first, but Windows-native builds are now part of the supported path.
 
 - `macOS`: supported, with automatic `IINA` detection when available
 - `Linux`: supported
 - `WSL`: possible, but not a polished target yet
-- `Windows native`: not properly set up yet; the current player-launch path assumes tools like `sh`, `which`, and `nohup`
+- `Windows native`: supported for the Rust TUI build, with native `mpv` / `VLC` launch handling
 
 ## Requirements
 
@@ -58,6 +58,7 @@ Current planned release targets:
 - `ani-cli-linux-x86_64.tar.gz`
 - `ani-cli-macos-x86_64.tar.gz`
 - `ani-cli-macos-aarch64.tar.gz`
+- `ani-cli-windows-x86_64.zip`
 
 After downloading:
 
@@ -217,6 +218,7 @@ Pushing a tag like `v0.1.0` triggers a GitHub Actions workflow that builds and u
 - Linux `x86_64`
 - macOS `x86_64`
 - macOS `aarch64` (Apple Silicon)
+- Windows `x86_64`
 
 ## Source layout
 

@@ -1,8 +1,11 @@
+use aes::cipher::{KeyIvInit, StreamCipher};
+use aes::Aes256;
 use base64::prelude::*;
-use openssl::symm::{decrypt, Cipher};
+use ctr::Ctr128BE;
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, ACCEPT_LANGUAGE};
 use reqwest::Client;
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::process::Command;
 use std::time::Duration;
@@ -19,10 +22,19 @@ const ALLANIME_EP_QUERY_HASH: &str =
 
 /// Returns the SHA256 hex digest of the key string used for decryption.
 fn get_allanime_key() -> Vec<u8> {
-    use openssl::sha::Sha256;
     let mut hasher = Sha256::new();
     hasher.update(b"Xot36i3lK3:v1");
-    hasher.finish().to_vec()
+    hasher.finalize().to_vec()
+}
+
+fn aes_256_ctr_decrypt(key: &[u8], ctr: &[u8; 16], ciphertext: &[u8]) -> Result<Vec<u8>, String> {
+    type Aes256Ctr = Ctr128BE<Aes256>;
+
+    let mut cipher =
+        Aes256Ctr::new_from_slices(key, ctr).map_err(|e| format!("AES setup failed: {e}"))?;
+    let mut plain = ciphertext.to_vec();
+    cipher.apply_keystream(&mut plain);
+    Ok(plain)
 }
 
 #[derive(Debug, Clone)]
@@ -408,8 +420,7 @@ impl ApiClient {
         let ct_len = data.len() - 13 - 16;
         let ct = &data[13..13 + ct_len];
 
-        let plain_bytes = decrypt(Cipher::aes_256_ctr(), &key, Some(&ctr), ct)
-            .map_err(|e| format!("AES decryption failed: {}", e))?;
+        let plain_bytes = aes_256_ctr_decrypt(&key, &ctr, ct)?;
 
         let plain = String::from_utf8_lossy(&plain_bytes);
 
@@ -678,7 +689,7 @@ fn parse_filemoon_links(resp: &str) -> Result<Vec<(String, String, Option<String
     }
 
     let ct = &payload_bytes[..payload_bytes.len() - 16];
-    let plain_bytes = decrypt(Cipher::aes_256_ctr(), &key, Some(&ctr), ct)
+    let plain_bytes = aes_256_ctr_decrypt(&key, &ctr, ct)
         .map_err(|e| format!("Filemoon AES decryption failed: {}", e))?;
     let plain = String::from_utf8_lossy(&plain_bytes);
 
