@@ -181,7 +181,13 @@ fn render_detail_pane(f: &mut Frame, area: Rect, app: &App, sel: usize) {
         ])
         .split(inner);
 
-    render_detail_main(f, pane[0], app, entry, next_ep, ratio, total, &last_at, t);
+    let meta = DetailMeta {
+        next_ep,
+        ratio,
+        total,
+        last_at: &last_at,
+    };
+    render_detail_main(f, pane[0], entry, &meta, t);
     f.render_widget(
         Paragraph::new(chrome::dotted(inner.width as usize, t)),
         pane[1],
@@ -189,15 +195,18 @@ fn render_detail_pane(f: &mut Frame, area: Rect, app: &App, sel: usize) {
     render_mochi_recent(f, pane[2], app, sel, t);
 }
 
-fn render_detail_main<'a>(
-    f: &mut Frame,
-    area: Rect,
-    app: &App,
-    entry: &crate::db::WatchEntry,
+struct DetailMeta<'a> {
     next_ep: u32,
     ratio: f64,
     total: u32,
-    last_at: &str,
+    last_at: &'a str,
+}
+
+fn render_detail_main(
+    f: &mut Frame,
+    area: Rect,
+    entry: &crate::db::WatchEntry,
+    meta: &DetailMeta<'_>,
     t: &crate::theme::Theme,
 ) {
     let bar_w = (area.width as usize).saturating_sub(2).min(56);
@@ -216,29 +225,30 @@ fn render_detail_main<'a>(
         Line::from(vec![
             Span::styled("episode ", theme::fg(t.text_dim)),
             Span::styled(
-                format!("{}", next_ep),
+                format!("{}", meta.next_ep),
                 Style::default().fg(t.gold).add_modifier(Modifier::BOLD),
             ),
-            if total > 0 {
-                Span::styled(format!("  of {}", total), theme::fg(t.text_dim))
+            if meta.total > 0 {
+                Span::styled(format!("  of {}", meta.total), theme::fg(t.text_dim))
             } else {
                 Span::raw("")
             },
         ]),
         Line::raw(""),
         Line::from(Span::styled(
-            theme::progress_bar(ratio, bar_w),
+            theme::progress_bar(meta.ratio, bar_w),
             theme::fg(t.gold),
         )),
         Line::from(vec![
-            Span::styled(format!("{:.0}%", ratio * 100.0), theme::fg(t.text_dim)),
+            Span::styled(format!("{:.0}%", meta.ratio * 100.0), theme::fg(t.text_dim)),
             Span::styled("   ·   ", theme::dim(t.text_subtle)),
             Span::styled(format!("{} watched", entry.episode), theme::fg(t.sage)),
-            if total > 0 {
+            if meta.total > 0 {
                 Span::styled(
                     format!(
                         "   ·   {} to go",
-                        total.saturating_sub(entry.episode.parse::<u32>().unwrap_or(0))
+                        meta.total
+                            .saturating_sub(entry.episode.parse::<u32>().unwrap_or(0))
                     ),
                     theme::fg(t.text_dim),
                 )
@@ -257,19 +267,19 @@ fn render_detail_main<'a>(
             ),
             Span::styled("  resume episode ", theme::fg(t.text)),
             Span::styled(
-                format!("{}", next_ep),
+                format!("{}", meta.next_ep),
                 Style::default().fg(t.gold).add_modifier(Modifier::BOLD),
             ),
         ]),
-        if !last_at.is_empty() {
+        if !meta.last_at.is_empty() {
             Line::from(vec![Span::raw("")])
         } else {
             Line::raw("")
         },
-        if !last_at.is_empty() {
+        if !meta.last_at.is_empty() {
             Line::from(vec![
                 Span::styled("last watched  ", theme::dim(t.text_subtle)),
-                Span::styled(last_at.to_string(), theme::fg(t.text_dim)),
+                Span::styled(meta.last_at.to_string(), theme::fg(t.text_dim)),
             ])
         } else {
             Line::raw("")
@@ -306,8 +316,10 @@ fn render_mochi_recent(f: &mut Frame, area: Rect, app: &App, sel: usize, t: &cra
 
 fn mochi_mood(sel: usize, tick: usize) -> Mood {
     // Slightly happy when on first item, idle otherwise.
-    // Sprinkle in a "thinking" frame very occasionally.
-    if (tick / 100) % 8 == 0 {
+    // Sprinkle in a "thinking" frame very occasionally and a rare sleepy beat.
+    if (tick / 100).is_multiple_of(16) {
+        Mood::Sleepy
+    } else if (tick / 100).is_multiple_of(8) {
         Mood::Thinking
     } else if sel == 0 {
         Mood::Happy

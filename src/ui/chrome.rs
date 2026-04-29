@@ -106,22 +106,6 @@ fn render_toasts(f: &mut Frame, stage: Rect, app: &App) {
     f.render_widget(Paragraph::new(lines), toast_area);
 }
 
-/// A soft surface panel: thin top/bottom rule, no full border (cleaner than box-drawing).
-pub fn panel_block<'a>(title: &'a str, t: &'a Theme, width: usize) -> Vec<Line<'a>> {
-    let title_w = title.chars().count();
-    let dash_w = width.saturating_sub(title_w + 4);
-    let top = Line::from(vec![
-        Span::styled("─── ", theme::fg(t.border_focus)),
-        Span::styled(
-            title,
-            Style::default().fg(t.gold).add_modifier(Modifier::BOLD),
-        ),
-        Span::raw(" "),
-        Span::styled("─".repeat(dash_w), theme::fg(t.border)),
-    ]);
-    vec![top]
-}
-
 /// A divider line of dots, full width.
 pub fn dotted<'a>(width: usize, t: &Theme) -> Line<'a> {
     Line::from(Span::styled("·".repeat(width), theme::dim(t.text_subtle)))

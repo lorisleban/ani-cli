@@ -93,18 +93,3 @@ pub fn render_wordmark<'a>(t: &Theme, splash_tick: usize) -> Vec<Line<'a>> {
         })
         .collect()
 }
-
-/// A single-line compact form: the face row only, for tight spaces.
-/// Looks like:  (◕ᴗ◕7  "message"
-pub fn render_mochi_inline<'a>(mood: Mood, tick: usize, message: &'a str, t: &Theme) -> Line<'a> {
-    // row index 1 is the "face" row
-    let face = mochi_for_tick(mood, tick)
-        .get(1)
-        .copied()
-        .unwrap_or("(˚ˎ 。7");
-    Line::from(vec![
-        Span::styled(face.to_string(), theme::fg(t.gold)),
-        Span::raw("  "),
-        Span::styled(message, theme::italic(t.text_dim)),
-    ])
-}

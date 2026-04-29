@@ -148,7 +148,7 @@ fn render_grid(f: &mut Frame, area: Rect, app: &App) {
 
     let mut lines: Vec<Line> = Vec::with_capacity(area.height as usize);
     let total = app.episodes.len();
-    let rows = (total + cols - 1) / cols;
+    let rows = total.div_ceil(cols);
     let visible_rows = (area.height as usize).saturating_sub(1);
     let sel_row = app.episode_selected / cols;
     let start_row = sel_row.saturating_sub(visible_rows.saturating_sub(2));

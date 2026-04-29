@@ -80,11 +80,7 @@ pub fn launch_player(
             }
             args.push(shell_escape(url));
 
-            let shell_cmd = format!(
-                "nohup '{}' {} >/dev/null 2>&1 &",
-                iina_cli,
-                args.join(" ")
-            );
+            let shell_cmd = format!("nohup '{}' {} >/dev/null 2>&1 &", iina_cli, args.join(" "));
 
             Command::new("sh")
                 .arg("-c")
@@ -96,9 +92,7 @@ pub fn launch_player(
                 .map_err(|e| format!("Failed to launch iina: {}", e))?;
         }
         PlayerType::Mpv => {
-            let mut args = vec![
-                format!("--force-media-title={}", shell_escape(title)),
-            ];
+            let mut args = vec![format!("--force-media-title={}", shell_escape(title))];
             if let Some(refr) = referer {
                 args.push(format!("--referrer={}", shell_escape(refr)));
             }
@@ -107,10 +101,7 @@ pub fn launch_player(
             }
             args.push(shell_escape(url));
 
-            let shell_cmd = format!(
-                "nohup mpv {} >/dev/null 2>&1 &",
-                args.join(" ")
-            );
+            let shell_cmd = format!("nohup mpv {} >/dev/null 2>&1 &", args.join(" "));
 
             Command::new("sh")
                 .arg("-c")
@@ -131,10 +122,7 @@ pub fn launch_player(
             }
             args.push(shell_escape(url));
 
-            let shell_cmd = format!(
-                "nohup vlc {} >/dev/null 2>&1 &",
-                args.join(" ")
-            );
+            let shell_cmd = format!("nohup vlc {} >/dev/null 2>&1 &", args.join(" "));
 
             Command::new("sh")
                 .arg("-c")

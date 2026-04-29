@@ -5,28 +5,24 @@ use crate::app::App;
 
 pub struct Theme {
     pub bg: Color,
-    pub surface: Color,
     pub text: Color,
     pub text_dim: Color,
     pub text_subtle: Color,
     pub border: Color,
-    pub border_focus: Color,
-    pub gold: Color,   // primary accent — lantern
-    pub moon: Color,   // secondary accent — moonlight
-    pub sage: Color,   // success / playing
-    pub coral: Color,  // danger / errors
+    pub gold: Color,  // primary accent — lantern
+    pub moon: Color,  // secondary accent — moonlight
+    pub sage: Color,  // success / playing
+    pub coral: Color, // danger / errors
 }
 
 impl Theme {
     pub fn lantern() -> Self {
         Self {
             bg: Color::Rgb(26, 27, 38),
-            surface: Color::Rgb(36, 40, 59),
             text: Color::Rgb(192, 202, 245),
             text_dim: Color::Rgb(120, 130, 170),
             text_subtle: Color::Rgb(65, 72, 104),
             border: Color::Rgb(41, 46, 66),
-            border_focus: Color::Rgb(122, 162, 247),
             gold: Color::Rgb(224, 175, 104),
             moon: Color::Rgb(122, 162, 247),
             sage: Color::Rgb(158, 206, 106),
@@ -42,20 +38,13 @@ pub const TOAST_REVEAL: &[&str] = &["▁", "▃", "▆", "█"];
 pub const SEL_BAR: &str = "▌";
 pub const DOT: &str = "·";
 pub const RING: &str = "○";
-pub const RING_FILLED: &str = "●";
 pub const CHECK: &str = "✓";
-pub const ARROW: &str = "→";
 pub const SPARKLE: &str = "✦";
-pub const HEART: &str = "♡";
-pub const FLOWER: &str = "✿";
 
 // Style helpers ---------------------------------------------------------
 
 pub fn fg(c: Color) -> Style {
     Style::default().fg(c)
-}
-pub fn bold(c: Color) -> Style {
-    Style::default().fg(c).add_modifier(Modifier::BOLD)
 }
 pub fn dim(c: Color) -> Style {
     Style::default().fg(c).add_modifier(Modifier::DIM)
@@ -110,18 +99,16 @@ pub fn progress_bar(ratio: f64, width: usize) -> String {
     out
 }
 
-// A "pill" — short label with surface bg, used for mode/quality
-pub fn pill<'a>(label: &'a str, fg: Color, bg: Color) -> Span<'a> {
-    Span::styled(
-        format!(" {} ", label),
-        Style::default().fg(fg).bg(bg).add_modifier(Modifier::BOLD),
-    )
-}
-
 // One key hint as a span sequence: [ k ] action
 pub fn keyhint<'a>(key: &'a str, action: &'a str, t: &Theme) -> Vec<Span<'a>> {
     vec![
-        Span::styled(format!(" {} ", key), Style::default().fg(t.bg).bg(t.gold).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            format!(" {} ", key),
+            Style::default()
+                .fg(t.bg)
+                .bg(t.gold)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled(format!(" {}   ", action), fg(t.text_dim)),
     ]
 }
@@ -133,7 +120,7 @@ pub fn spinner_frame(tick: usize) -> &'static str {
 
 // "Breathing" mode pill — alternates BOLD/DIM by tick to feel alive
 pub fn mode_pill<'a>(mode: &'a str, tick: usize, t: &Theme) -> Span<'a> {
-    let m = if (tick / 5) % 2 == 0 {
+    let m = if (tick / 5).is_multiple_of(2) {
         Modifier::BOLD
     } else {
         Modifier::DIM
@@ -158,8 +145,7 @@ pub fn render_toasts<'a>(app: &'a App, width: u16) -> Vec<Line<'a>> {
             (t.moon, t.text)
         };
         let body = truncate(&toast.message, (width as usize).saturating_sub(6));
-        let pad = (width as usize)
-            .saturating_sub(body.chars().count() + 4);
+        let pad = (width as usize).saturating_sub(body.chars().count() + 4);
         lines.push(Line::from(vec![
             Span::raw(" ".repeat(pad)),
             Span::styled(bar_char.to_string(), fg(bar_color)),

@@ -1,38 +1,46 @@
-name: 'ani-cli checks'
+name: ani-cli checks
+
 on:
   push:
     branches:
       - master
   pull_request:
-    paths:
-      - "**ani-cli"
 
 jobs:
-  sh-checker:
-    name: Shellcheck + Shfmt
+  fmt:
+    name: Cargo Fmt
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - name: Run the sh-checker
-      uses: luizm/action-sh-checker@master
-      env:
-        SHELLCHECK_OPTS: -s sh -o all -e 2250
-        SHFMT_OPTS: -i 4 -ci -d
-      with:
-        sh_checker_exclude: "_ani-cli-bash _ani-cli-zsh"
-      
-  check-exec:
-    name: Executable Bit
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - name: test exec bit
-      run: test -x "./ani-cli"
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: Check formatting
+        run: cargo fmt --check
 
-  check-no-awk:
-    name: No Awk Allowed
+  clippy:
+    name: Clippy
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - name: verify that noone added awk
-      run: '! grep awk "./ani-cli"'
+      - uses: actions/checkout@v4
+      - name: Install system deps
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Run clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+  build:
+    name: Cargo Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system deps
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build release binary
+        run: cargo build --release
