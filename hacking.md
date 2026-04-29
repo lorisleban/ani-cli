@@ -4,11 +4,16 @@ This fork is a Rust TUI application, not a shell-script menu wrapper anymore. If
 
 ## Architecture map
 
-- `src/main.rs`: terminal setup, event loop, key handling, async screen actions
+- `src/main.rs`: tiny binary entrypoint that calls the runtime
+- `src/lib.rs`: crate module map
+- `src/runtime/`: terminal setup/cleanup and the event loop
 - `src/app.rs`: shared app state, history refresh, navigation stack, playback bookkeeping
-- `src/api.rs`: allanime/allanime-day requests, decoding, provider parsing, quality selection
-- `src/player.rs`: player detection and detached launch logic
-- `src/db.rs`: SQLite watch-history storage
+- `src/domain/`: core types shared across app, UI, providers, persistence, and player code
+- `src/api.rs`: compatibility facade that exposes the active anime catalog client
+- `src/providers/allanime/`: allanime/allanime-day requests, decoding, provider parsing, quality selection, and curl fallback transport
+- `src/persistence/`: SQLite watch-history storage
+- `src/services/`: service traits for anime catalog, history, and playback boundaries
+- `src/player/`: player detection and detached launch logic
 - `src/ui/`: rendering for home, search, detail, history, help, and now-playing screens
 
 ## Running locally
@@ -58,14 +63,15 @@ This is the fastest way to understand whether a breakage is happening at:
 
 ## Modifying providers
 
-Most provider-related work happens in `src/api.rs`.
+Most provider-related work happens in `src/providers/allanime/`.
 
 Places worth starting with:
 
-- `get_episode_url(...)`: top-level episode resolution
+- `mod.rs`: top-level search, episode list, and stream resolution
+- `config.rs`: AllAnime host/header/query constants
+- `transport.rs`: captcha detection plus curl fallback requests
 - `decode_tobeparsed(...)`: provider payload decoding
 - `fetch_provider_links(...)`: provider-specific media-link extraction
-- helper parsers near the bottom of the file
 
 A safe workflow is:
 

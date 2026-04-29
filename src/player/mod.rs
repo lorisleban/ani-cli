@@ -6,12 +6,7 @@ use std::os::unix::process::CommandExt;
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum PlayerType {
-    Mpv,
-    Iina,
-    Vlc,
-}
+pub use crate::domain::playback::PlayerType;
 
 impl PlayerType {
     pub fn detect() -> Self {
@@ -25,14 +20,6 @@ impl PlayerType {
             return PlayerType::Vlc;
         }
         PlayerType::Mpv
-    }
-
-    pub fn name(&self) -> &str {
-        match self {
-            PlayerType::Mpv => "mpv",
-            PlayerType::Iina => "iina",
-            PlayerType::Vlc => "vlc",
-        }
     }
 }
 

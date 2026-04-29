@@ -222,11 +222,16 @@ Pushing a tag like `v0.1.0` triggers a GitHub Actions workflow that builds and u
 
 ## Source layout
 
-- `src/main.rs`: event loop and screen routing
-- `src/app.rs`: app state and navigation
-- `src/api.rs`: allanime scraping/API integration
-- `src/player.rs`: external player detection and launch
-- `src/db.rs`: SQLite-backed watch history
+- `src/main.rs`: tiny binary entrypoint
+- `src/lib.rs`: crate module map
+- `src/runtime/`: terminal lifecycle and the TUI event loop
+- `src/app.rs`: app state, navigation, and playback bookkeeping
+- `src/domain/`: shared domain types for anime, history, and playback
+- `src/api.rs`: compatibility facade for the active anime provider
+- `src/providers/allanime/`: AllAnime API integration, provider decoding, and fallback transport
+- `src/persistence/`: SQLite-backed watch history implementation
+- `src/services/`: service traits around catalog, history, and playback boundaries
+- `src/player/`: external player detection and launch
 - `src/ui/`: all TUI screens and chrome
 
 ## Notes for upstream users
