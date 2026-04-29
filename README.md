@@ -49,6 +49,31 @@ Runtime:
 
 ## Install
 
+### Download a release binary
+
+The easiest path for most users is a GitHub release asset.
+
+Current planned release targets:
+
+- `ani-cli-linux-x86_64.tar.gz`
+- `ani-cli-macos-x86_64.tar.gz`
+- `ani-cli-macos-aarch64.tar.gz`
+
+After downloading:
+
+```sh
+tar -xzf ani-cli-*.tar.gz
+chmod +x ani-cli
+./ani-cli
+```
+
+If you want it on your `PATH`:
+
+```sh
+mkdir -p ~/.local/bin
+mv ani-cli ~/.local/bin/
+```
+
 ### Run from source
 
 ```sh
@@ -74,6 +99,14 @@ ani-cli
 ```sh
 make install
 ani-cli
+```
+
+### Install with Cargo
+
+If you already use Rust tooling, you can install directly from the repo:
+
+```sh
+cargo install --git https://github.com/lorisleban/ani-cli
 ```
 
 ## Usage
@@ -176,6 +209,14 @@ make fmt
 make check
 make build
 ```
+
+## Releases
+
+Pushing a tag like `v0.1.0` triggers a GitHub Actions workflow that builds and uploads release archives for:
+
+- Linux `x86_64`
+- macOS `x86_64`
+- macOS `aarch64` (Apple Silicon)
 
 ## Source layout
 
