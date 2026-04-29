@@ -10,8 +10,21 @@ permissions:
   contents: write
 
 jobs:
+  create-release:
+    name: Create release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create GitHub release if missing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME:-${GITHUB_REF#refs/tags/}}"
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --generate-notes
+
   build-release:
     name: Build ${{ matrix.asset_name }}
+    needs: create-release
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -57,7 +70,4 @@ jobs:
         shell: bash
         run: |
           tag="${GITHUB_REF_NAME:-${GITHUB_REF#refs/tags/}}"
-          if ! gh release view "$tag" >/dev/null 2>&1; then
-            gh release create "$tag" --generate-notes
-          fi
           gh release upload "$tag" "${{ matrix.asset_name }}.tar.gz" --clobber
