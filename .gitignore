@@ -1,10 +1,21 @@
-/target
-/.agents/
-/claudecode/
-/codex/
-/opencode/
-/pi-mono/
+# Rust build output
+/target/
+
+# Cargo / rustfmt backups
+**/*.rs.bk
+
+# Local app and tooling artifacts
 /telemetry-id
 /skills-lock.json
-/CODEBASE_MAP/
-/UI_REFERENCE_COMPILED.md
+/.agents/
+
+# OS metadata
+.DS_Store
+
+# Editor swap files
+*.swp
+*.swo
+*~
+
+.agents
+skills-lock.json

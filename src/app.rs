@@ -157,14 +157,6 @@ impl App {
         }
     }
 
-    /// Back-compat wrappers, since api.rs / older callers may use these names.
-    pub fn set_notification(&mut self, msg: &str, is_error: bool) {
-        self.toast(msg.to_string(), is_error);
-    }
-    pub fn clear_notification(&mut self) {
-        // nothing — toasts auto-fade
-    }
-
     pub fn refresh_history(&mut self) {
         self.history = self.db.get_history().unwrap_or_default();
         self.continue_watching = self.db.get_continue_watching().unwrap_or_default();

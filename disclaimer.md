@@ -35,12 +35,12 @@ A browser is a tool, and the maliciousness of the tool is directly based on the 
 
 This project uses client-side content access mechanisms. Hence, the copyright infrigements or DMCA in this project's regards are to be forwarded to the associated site by the associated notifier of any such claims. As of writing this is [allanime](https://allanime.to)
 
-<b> Do not harass the maintainer. </b>
+<b> Do not harass maintainers or upstream contributors. </b>
 
 <h2>
 Contacting the maintainer
 </h2>
 <br>
 
-Begin by making a GitHub issue or sending an email to port19@port19.xyz
+For this fork, begin by making a GitHub issue in the current repository maintained by [lorisleban](https://github.com/lorisleban/ani-cli).
 </div>

@@ -1,33 +1,43 @@
 ---
 name: Bug report
-about: Ran into some unexpected behaviour? NOT FOR FEATURE REQUESTS
+about: Report a problem in the Rust TUI app
 title: ''
 labels: 'priority 2: medium, type: bug'
 assignees: ''
-
 ---
-## **Make sure you are on the latest version by running `ani-cli -U`**
 
-**Metadata (please complete the following information)**
-Version: [e.g. 4.7.6, run `ani-cli -V` to find out]
-OS: [e.g. Windows 10 / Linux Mint 20.3]
-Shell: [e.g. zsh, run `readlink /bin/sh` to get your shell]
-Anime: [e.g. flcl] (if applicable)
+## Before filing
 
-**Describe the bug**
-Downloading is broken.
-It says something about an unsupported protocol, see screenshot.
+- Reproduce on the latest commit or latest release available for this fork.
+- If this looks API/provider related, try again with `ANI_CLI_DEBUG_API=1` and attach the useful `/tmp/ani-cli-*` artifacts.
 
-**Steps To Reproduce**
+## Metadata
 
-1. Run `ani-cli -d flcl`
-2. Choose 2 (fooly-cooly)
-3. Choose episode 1
+- Commit or version:
+- OS:
+- Terminal:
+- Player (`mpv`, `IINA`, `VLC`):
+- Mode (`sub` or `dub`):
+- Anime / episode:
 
-**Expected behavior**
-Downloading should work
+## Describe the bug
 
-**Screenshots (if applicable; you can just drag the image onto github. remove the following line if not needed)**
-![image](https://user-images.githubusercontent.com/82055622/151030428-2e78d15f-4ba9-4d86-b6f3-8307557b4b29.png)
+A clear and concise description of what happened.
 
-**Additional context**
+## Steps to reproduce
+
+1. Launch the app
+2. ...
+3. ...
+
+## Expected behavior
+
+What you expected to happen.
+
+## Screenshots or logs
+
+If relevant, add screenshots, terminal output, or trimmed debug payloads.
+
+## Additional context
+
+Anything else that might help reproduce the issue.

@@ -315,8 +315,8 @@ impl ApiClient {
                         .get("sourceName")
                         .and_then(|v| v.as_str())
                         .unwrap_or("");
-                    if source_url.starts_with("--") {
-                        let decoded = decode_provider_url(&source_url[2..]);
+                    if let Some(stripped) = source_url.strip_prefix("--") {
+                        let decoded = decode_provider_url(stripped);
                         if !decoded.is_empty() {
                             provider_data.push((source_name.to_string(), decoded));
                         }
@@ -622,7 +622,7 @@ fn decode_provider_url(encoded: &str) -> String {
 
 fn b64url_decode(input: &str) -> Result<Vec<u8>, String> {
     let mut normalized = input.replace('-', "+").replace('_', "/");
-    while normalized.len() % 4 != 0 {
+    while !normalized.len().is_multiple_of(4) {
         normalized.push('=');
     }
     BASE64_STANDARD

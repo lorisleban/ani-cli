@@ -54,20 +54,26 @@ pub fn render(f: &mut Frame, app: &App) {
         ])
         .split(stage);
 
-    render_center(f, cols[1], app, &anime_title, ep, total, ratio, &quality);
+    let view = NowPlayingView {
+        anime_title: &anime_title,
+        episode: ep,
+        total,
+        ratio,
+        quality: &quality,
+    };
+    render_center(f, cols[1], app, &view);
     render_mochi_corner(f, cols[2], app);
 }
 
-fn render_center(
-    f: &mut Frame,
-    area: Rect,
-    app: &App,
-    anime_title: &str,
-    ep: &str,
+struct NowPlayingView<'a> {
+    anime_title: &'a str,
+    episode: &'a str,
     total: u32,
     ratio: f64,
-    quality: &str,
-) {
+    quality: &'a str,
+}
+
+fn render_center(f: &mut Frame, area: Rect, app: &App, view: &NowPlayingView<'_>) {
     let t = &app.theme;
 
     // Vertically center the block
@@ -109,7 +115,7 @@ fn render_center(
     // title
     f.render_widget(
         Paragraph::new(Line::from(Span::styled(
-            anime_title,
+            view.anime_title,
             Style::default().fg(t.text).add_modifier(Modifier::BOLD),
         )))
         .alignment(Alignment::Center),
@@ -121,11 +127,11 @@ fn render_center(
         Paragraph::new(Line::from(vec![
             Span::styled("episode ", theme::fg(t.text_dim)),
             Span::styled(
-                ep.to_string(),
+                view.episode.to_string(),
                 Style::default().fg(t.gold).add_modifier(Modifier::BOLD),
             ),
-            if total > 0 {
-                Span::styled(format!("  of  {}", total), theme::fg(t.text_dim))
+            if view.total > 0 {
+                Span::styled(format!("  of  {}", view.total), theme::fg(t.text_dim))
             } else {
                 Span::raw("")
             },
@@ -138,17 +144,19 @@ fn render_center(
     let bar_w = (chunks[6].width as usize).saturating_sub(8).min(52);
     f.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled(theme::progress_bar(ratio, bar_w), theme::fg(t.gold)),
+            Span::styled(theme::progress_bar(view.ratio, bar_w), theme::fg(t.gold)),
             Span::raw("  "),
-            Span::styled(format!("{:.0}%", ratio * 100.0), theme::fg(t.text_dim)),
+            Span::styled(format!("{:.0}%", view.ratio * 100.0), theme::fg(t.text_dim)),
         ]))
         .alignment(Alignment::Center),
         chunks[6],
     );
 
     // pct + episodes remaining
-    if total > 0 {
-        let remaining = total.saturating_sub(ep.parse::<u32>().unwrap_or(0));
+    if view.total > 0 {
+        let remaining = view
+            .total
+            .saturating_sub(view.episode.parse::<u32>().unwrap_or(0));
         f.render_widget(
             Paragraph::new(Line::from(vec![Span::styled(
                 format!("{} episodes remaining", remaining),
@@ -191,7 +199,7 @@ fn render_center(
     };
     f.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled(quality, theme::fg(t.moon)),
+            Span::styled(view.quality, theme::fg(t.moon)),
             Span::styled("  ·  ", theme::dim(t.text_subtle)),
             Span::styled(app.player_type.name(), theme::fg(t.text_dim)),
             Span::styled("  ·  ", theme::dim(t.text_subtle)),
@@ -230,13 +238,4 @@ fn render_mochi_corner(f: &mut Frame, area: Rect, app: &App) {
         ))),
         chunks[2],
     );
-}
-
-fn inset(r: Rect, dx: u16, dy: u16) -> Rect {
-    Rect {
-        x: r.x + dx,
-        y: r.y + dy,
-        width: r.width.saturating_sub(dx * 2),
-        height: r.height.saturating_sub(dy * 2),
-    }
 }
