@@ -2,7 +2,9 @@ use std::time::Instant;
 
 use crate::api::{AnimeResult, EpisodeUrl, Mode};
 use crate::db::{Database, NewWatchSession, WatchEntry};
-use crate::discord::{session_started_at_unix, DiscordPresence, PlayerActivityMonitor, PresencePlayback};
+use crate::discord::{
+    session_started_at_unix, DiscordPresence, PlayerActivityMonitor, PresencePlayback,
+};
 use crate::domain::anime::AnimePresenceMetadata;
 use crate::player::{self, PlayerType};
 use crate::theme::Theme;

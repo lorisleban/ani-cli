@@ -801,11 +801,22 @@ fn parse_presence_metadata(
     let image_url = first
         .pointer("/images/webp/large_image_url")
         .and_then(Value::as_str)
-        .or_else(|| first.pointer("/images/jpg/large_image_url").and_then(Value::as_str))
-        .or_else(|| first.pointer("/images/jpg/image_url").and_then(Value::as_str))
+        .or_else(|| {
+            first
+                .pointer("/images/jpg/large_image_url")
+                .and_then(Value::as_str)
+        })
+        .or_else(|| {
+            first
+                .pointer("/images/jpg/image_url")
+                .and_then(Value::as_str)
+        })
         .map(str::to_string);
     let external_url = first.get("url").and_then(Value::as_str).map(str::to_string);
-    let media_type = first.get("type").and_then(Value::as_str).map(str::to_string);
+    let media_type = first
+        .get("type")
+        .and_then(Value::as_str)
+        .map(str::to_string);
     let episode_count = first
         .get("episodes")
         .and_then(Value::as_u64)
@@ -819,7 +830,10 @@ fn parse_presence_metadata(
             None => season.to_string(),
         }
     });
-    let year = first.get("year").and_then(Value::as_i64).map(|value| value as i32);
+    let year = first
+        .get("year")
+        .and_then(Value::as_i64)
+        .map(|value| value as i32);
 
     Some(AnimePresenceMetadata {
         canonical_title,

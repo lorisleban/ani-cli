@@ -1,4 +1,3 @@
-use std::fs::OpenOptions;
 use std::io::{BufRead, BufReader, ErrorKind, Write};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -42,12 +41,9 @@ struct TimelineState {
 }
 
 enum PresenceCommand {
-    Start(PresencePlayback, Option<PlayerActivityMonitor>),
+    Start(Box<PresencePlayback>, Option<PlayerActivityMonitor>),
     Stop(u64),
-    Timeline {
-        token: u64,
-        timeline: TimelineState,
-    },
+    Timeline { token: u64, timeline: TimelineState },
     Ended(u64),
     Shutdown,
 }
@@ -75,7 +71,9 @@ impl DiscordPresence {
         playback: PresencePlayback,
         monitor: Option<PlayerActivityMonitor>,
     ) {
-        let _ = self.sender.send(PresenceCommand::Start(playback, monitor));
+        let _ = self
+            .sender
+            .send(PresenceCommand::Start(Box::new(playback), monitor));
     }
 
     pub fn stop(&self, token: u64) {
@@ -103,7 +101,7 @@ fn spawn_presence_worker(
             match command {
                 PresenceCommand::Start(playback, monitor) => {
                     active_token = Some(playback.token);
-                    active_playback = Some(playback.clone());
+                    active_playback = Some((*playback).clone());
                     discord.set_activity(&playback, &TimelineState::default());
 
                     if let Some(PlayerActivityMonitor::Mpv { endpoint }) = monitor {
@@ -179,15 +177,14 @@ fn spawn_mpv_monitor(token: u64, endpoint: String, sender: Sender<PresenceComman
                                 break;
                             }
 
-                            if event == "property-change" {
-                                if apply_property_change(&mut timeline, &value)
-                                    && should_emit_timeline(&mut last_emit)
-                                {
-                                    let _ = sender.send(PresenceCommand::Timeline {
-                                        token,
-                                        timeline: timeline.clone(),
-                                    });
-                                }
+                            if event == "property-change"
+                                && apply_property_change(&mut timeline, &value)
+                                && should_emit_timeline(&mut last_emit)
+                            {
+                                let _ = sender.send(PresenceCommand::Timeline {
+                                    token,
+                                    timeline: timeline.clone(),
+                                });
                             }
                         } else if value.get("error").and_then(Value::as_str) == Some("success")
                             && apply_property_reply(&mut timeline, &value)
@@ -265,7 +262,9 @@ fn connect_mpv_ipc(endpoint: &str) -> Option<std::os::unix::net::UnixStream> {
     for _ in 0..50 {
         match std::os::unix::net::UnixStream::connect(endpoint) {
             Ok(stream) => return Some(stream),
-            Err(err) if err.kind() == ErrorKind::NotFound => thread::sleep(Duration::from_millis(100)),
+            Err(err) if err.kind() == ErrorKind::NotFound => {
+                thread::sleep(Duration::from_millis(100))
+            }
             Err(_) => return None,
         }
     }
@@ -388,7 +387,8 @@ fn build_state(playback: &PresencePlayback) -> String {
 }
 
 fn build_timestamps(playback: &PresencePlayback, timeline: &TimelineState) -> Timestamps {
-    if let (Some(position), Some(duration)) = (timeline.position_seconds, timeline.duration_seconds) {
+    if let (Some(position), Some(duration)) = (timeline.position_seconds, timeline.duration_seconds)
+    {
         let now = Utc::now().timestamp();
         let start = now.saturating_sub(position.floor() as i64);
         let end = start.saturating_add(duration.ceil() as i64);
@@ -432,3 +432,5 @@ pub fn session_started_at_unix() -> i64 {
         .map(|duration| duration.as_secs() as i64)
         .unwrap_or_else(|_| Utc::now().timestamp())
 }
+#[cfg(windows)]
+use std::fs::OpenOptions;

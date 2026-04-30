@@ -109,9 +109,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             crate::runtime::run(AppOptions {
                 player_type: cli.player.map(Into::into),
                 mode: cli.mode.map(Into::into),
-                discord_client_id: cli
-                    .discord_client_id
-                    .or_else(default_discord_client_id),
+                discord_client_id: cli.discord_client_id.or_else(default_discord_client_id),
             })
             .await
         }
