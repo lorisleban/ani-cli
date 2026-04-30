@@ -1,6 +1,7 @@
 pub mod api;
 pub mod app;
 pub mod ascii;
+pub mod cli;
 pub mod db;
 pub mod domain;
 pub mod persistence;

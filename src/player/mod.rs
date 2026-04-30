@@ -121,6 +121,10 @@ fn player_command(player: PlayerType) -> Option<PathBuf> {
     }
 }
 
+pub fn detected_player_path(player: PlayerType) -> Option<PathBuf> {
+    player_command(player)
+}
+
 fn player_binary_candidates(player: PlayerType) -> Vec<&'static str> {
     match player {
         PlayerType::Mpv => {

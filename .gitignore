@@ -8,6 +8,7 @@
 /telemetry-id
 /skills-lock.json
 /.agents/
+/.ani-cli/
 
 # OS metadata
 .DS_Store

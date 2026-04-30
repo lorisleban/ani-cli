@@ -118,7 +118,15 @@ Launch the app with:
 ani-cli
 ```
 
-There are no stable CLI flags for the Rust app yet. The expected workflow is fully interactive.
+Stable CLI entrypoints:
+
+```sh
+ani-cli --help
+ani-cli --version
+ani-cli doctor
+```
+
+The main playback workflow is still fully interactive and TUI-first.
 
 ## TUI controls
 
@@ -192,6 +200,12 @@ ANI_CLI_DEBUG_API=1 cargo run --release
 ```
 
 That writes request/response snapshots to `/tmp/ani-cli-*`.
+
+To inspect local setup and player detection:
+
+```sh
+ani-cli doctor
+```
 
 ## Development
 

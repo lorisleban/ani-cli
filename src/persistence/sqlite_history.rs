@@ -40,6 +40,10 @@ impl Database {
         Ok(db)
     }
 
+    pub fn resolve_db_path_for_cli() -> Result<PathBuf> {
+        Self::resolve_db_path()
+    }
+
     fn migrate(&self) -> Result<()> {
         self.conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         self.conn.execute_batch(
