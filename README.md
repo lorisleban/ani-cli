@@ -1,291 +1,180 @@
 # ani-cli
 
-A Rust rewrite of `ani-cli` with a full terminal UI built on `ratatui` and `crossterm`.
+A terminal UI for watching anime — search, track, and play without leaving your shell.
 
-Maintained in this fork by [@lorisleban](https://github.com/lorisleban). The Rust TUI rewrite in this repository is your project surface here, not the original upstream shell script maintainers'.
+> **This is a Rust TUI rewrite** maintained by [@lorisleban](https://github.com/lorisleban).
+> It is a separate direction from the original shell script project.
 
-This fork is no longer the original shell-script-first project. The supported entrypoint is the Rust binary in `src/`, and the app is designed around an interactive TUI for searching shows, picking episodes, tracking watch history, and handing playback off to an external player.
+---
 
-## What it does
+![Home screen](media/ani-cli-flow.gif)
 
-- Search anime from inside the terminal UI
-- Browse episode lists in a grid or long-form list
-- Toggle between sub and dub mode
-- Resume from local watch history
-- Launch playback in `mpv`, `IINA`, or `VLC`
-- Persist history in a local SQLite database
+---
 
-## Current scope
+## Features
 
-This rewrite is intentionally narrower than the upstream shell script.
+- **Search & browse** — find shows and episodes without touching a browser
+- **External player** — hands off to `mpv`, `IINA`, or `VLC`; stays out of the way
+- **Watch history** — SQLite-backed, survives reboots, per-show episode tracking
+- **Sub / dub toggle** — switch modes live from any screen
+- **Discord Rich Presence** — shows title, episode, quality, and a live progress bar (mpv only)
+- **Self-update** — `ani-cli upgrade` pulls the latest release binary in place
+- **Shell completions** — bash, zsh, fish, PowerShell
 
-- The Rust app is TUI-first. It does not currently expose the old flag-driven workflow from the shell script.
-- Features like downloader flows, syncplay, self-update flags, and legacy menu integrations are not wired into the Rust app yet.
-- The legacy `ani-cli` shell script may still exist in the repository as migration/reference material, but it is not the primary app.
-
-## Platform status
-
-Right now this codebase is still Unix-first, but Windows-native builds are now part of the supported path.
-
-- `macOS`: supported, with automatic `IINA` detection when available
-- `Linux`: supported
-- `WSL`: possible, but not a polished target yet
-- `Windows native`: supported for the Rust TUI build, with native `mpv` / `VLC` launch handling
-
-## Requirements
-
-Build-time:
-
-- Rust toolchain (`rustup`, `cargo`)
-
-Runtime:
-
-- One media player:
-  - `mpv`
-  - `IINA` on macOS
-  - `VLC`
-- `curl`
-  - used as a fallback for some API/provider requests
+---
 
 ## Install
 
-### Download a release binary
+### Download a release
 
-The easiest path for most users is a GitHub release asset.
+Grab the archive for your platform from [Releases](https://github.com/lorisleban/ani-cli/releases):
 
-Current planned release targets:
-
-- `ani-cli-linux-x86_64.tar.gz`
-- `ani-cli-macos-x86_64.tar.gz`
-- `ani-cli-macos-aarch64.tar.gz`
-- `ani-cli-windows-x86_64.zip`
-
-After downloading:
+| Platform | Archive |
+|---|---|
+| Linux x86_64 | `ani-cli-linux-x86_64.tar.gz` |
+| macOS x86_64 | `ani-cli-macos-x86_64.tar.gz` |
+| macOS Apple Silicon | `ani-cli-macos-aarch64.tar.gz` |
+| Windows x86_64 | `ani-cli-windows-x86_64.zip` |
 
 ```sh
 tar -xzf ani-cli-*.tar.gz
 chmod +x ani-cli
-./ani-cli
-```
-
-If you want it on your `PATH`:
-
-```sh
-mkdir -p ~/.local/bin
 mv ani-cli ~/.local/bin/
 ```
 
-### Run from source
+### Homebrew
 
 ```sh
-cargo run --release
+brew install lorisleban/tap/ani-cli
 ```
 
-### Build a release binary
-
-```sh
-cargo build --release
-./target/release/ani-cli
-```
-
-### Install locally
-
-```sh
-make install-local
-ani-cli
-```
-
-### Install globally
-
-```sh
-make install
-ani-cli
-```
-
-### Install with Cargo
-
-If you already use Rust tooling, you can install directly from the repo:
+### From source
 
 ```sh
 cargo install --git https://github.com/lorisleban/ani-cli
 ```
 
-## Usage
+Or clone and build:
 
-Launch the app with:
+```sh
+git clone https://github.com/lorisleban/ani-cli
+cd ani-cli
+cargo build --release
+./target/release/ani-cli
+```
+
+---
+
+## Requirements
+
+- A media player — `mpv` (recommended), `IINA` (macOS), or `VLC`
+- `curl` — used as a fallback for some provider requests
+
+---
+
+## Usage
 
 ```sh
 ani-cli
 ```
 
-Stable CLI entrypoints:
+The full workflow is interactive. Launch it, search for a show, pick an episode, watch.
+
+![Search](media/search.png)
+
+![Episode detail](media/episode-detail.png)
+
+![Now playing](media/now-playing.png)
+
+### CLI flags
 
 ```sh
-ani-cli --help
-ani-cli --version
-ani-cli doctor
-ani-cli config path
-ani-cli check-update
-ani-cli upgrade
-ani-cli completion powershell
+ani-cli --player mpv       # override player
+ani-cli --mode dub         # start in dub mode
 ```
 
-The main playback workflow is still fully interactive and TUI-first.
-
-Optional launch overrides:
+### Utility commands
 
 ```sh
-ani-cli --player mpv
-ani-cli --mode dub
+ani-cli doctor             # check player detection and paths
+ani-cli config path        # show history database location
+ani-cli check-update       # check for a newer release
+ani-cli upgrade            # self-update (unmanaged installs only)
+ani-cli completion zsh     # print shell completions
 ```
 
-## TUI controls
+---
 
-Global:
+## Controls
 
-- `/`: open search from anywhere
-- `g h`: go home
-- `g s`: go search
-- `g w`: go history
-- `g p`: go now playing
-- `?`: open help
-- `Q` or `Ctrl-C`: quit
-- `G`: jump to bottom
-- `g g`: jump to top
+**Navigation works the same everywhere** — `j`/`k` to move, `Enter` to open, `Esc` to go back.
 
-Home:
+| Key | Action |
+|---|---|
+| `/` | Open search from anywhere |
+| `g h` / `g s` / `g w` | Jump to Home / Search / History |
+| `d` | Toggle sub / dub |
+| `?` | Help screen |
+| `Q` | Quit |
 
-- `j` / `k`: move through continue-watching items
-- `Enter` or `r`: resume selected show
-- `s`: open search
-- `w`: open history
-- `d`: toggle sub/dub mode
+Episode detail additionally supports grid navigation with `h`/`j`/`k`/`l`.
 
-Search:
+The full keybind reference is inside the app — press `?`.
 
-- Type to search
-- `Enter`: open selected title
-- `Backspace`: edit query
-- `Esc`: go back
+---
 
-Episode detail:
+## Configuration
 
-- `h` / `j` / `k` / `l`: move through episodes
-- `Enter` or `p`: play selected episode
-- `d`: reload episode list in sub/dub mode
-- `Esc`: go back
+All configuration is done through environment variables or CLI flags. Nothing requires a config file.
 
-Now playing:
+| Variable | Effect | Default |
+|---|---|---|
+| `ANI_CLI_PLAYER` | Override player (`mpv`, `vlc`, `iina`) | auto-detected |
+| `ANI_CLI_MODE` | Default mode (`sub` / `dub`) | `sub` |
+| `ANI_CLI_QUALITY` | Default quality (`best`, `worst`, `1080p`, …) | `best` |
+| `ANI_CLI_DISCORD_CLIENT_ID` | Override Discord application ID | built-in |
+| `ANI_CLI_DEBUG_API` | Write API request/response snapshots to `/tmp` | unset |
 
-- `n` or `l`: play next episode
-- `p` or `h`: play previous episode
-- `r`: replay current episode
-- `s`: jump back to episode picker
-- `Esc`: return to detail view
+---
 
-History:
+## Discord Rich Presence
 
-- `j` / `k`: move
-- `x`: delete selected history item
-- `X`: clear history
-- `Esc`: go back
+Works out of the box — no configuration needed. When `mpv` is used, the presence shows a live progress bar. `VLC` and `IINA` show title, episode, and quality metadata.
 
-## Player behavior
+---
 
-The app auto-detects a player in this order:
+## Data
 
-1. `IINA` on macOS
-2. `mpv`
-3. `VLC`
-
-Playback is launched as a detached process so the TUI can keep running.
-
-## Data and debugging
-
-History is stored in a SQLite database under your platform data directory in an `ani-cli/history.db` folder.
-
-If you need API debugging output, run the app with:
+Watch history lives in a SQLite database:
 
 ```sh
-ANI_CLI_DEBUG_API=1 cargo run --release
+ani-cli config path        # prints the exact path
 ```
 
-That writes request/response snapshots to `/tmp/ani-cli-*`.
+Typical locations:
 
-To inspect local setup and player detection:
+- **Linux** — `~/.local/share/ani-cli/history.db`
+- **macOS** — `~/Library/Application Support/ani-cli/history.db`
+- **Windows** — `%APPDATA%\ani-cli\history.db`
 
-```sh
-ani-cli doctor
-```
-
-To inspect the resolved local history path:
-
-```sh
-ani-cli config path
-ani-cli config path data-dir
-```
-
-To check for releases or self-upgrade:
-
-```sh
-ani-cli check-update
-ani-cli upgrade
-```
-
-Package-managed installs are not replaced in place. In those cases, `upgrade` prints the package-manager action to use instead.
-
-## Development
-
-Useful commands:
-
-```sh
-cargo fmt
-cargo clippy --all-targets
-cargo build --release
-```
-
-Or through the included `Makefile`:
-
-```sh
-make fmt
-make check
-make build
-```
-
-## Releases
-
-Pushing a tag like `v0.1.0` triggers a GitHub Actions workflow that builds and uploads release archives for:
-
-- Linux `x86_64`
-- macOS `x86_64`
-- macOS `aarch64` (Apple Silicon)
-- Windows `x86_64`
-
-## Source layout
-
-- `src/main.rs`: tiny binary entrypoint
-- `src/lib.rs`: crate module map
-- `src/runtime/`: terminal lifecycle and the TUI event loop
-- `src/app.rs`: app state, navigation, and playback bookkeeping
-- `src/domain/`: shared domain types for anime, history, and playback
-- `src/api.rs`: compatibility facade for the active anime provider
-- `src/providers/allanime/`: AllAnime API integration, provider decoding, and fallback transport
-- `src/persistence/`: SQLite-backed watch history implementation
-- `src/services/`: service traits around catalog, history, and playback boundaries
-- `src/player/`: external player detection and launch
-- `src/ui/`: all TUI screens and chrome
-
-## Notes for upstream users
-
-If you came here expecting the original shell script behavior, read this fork as a separate app direction rather than a drop-in replacement for every upstream feature.
-
-Upstream deserves credit for the original `ani-cli` concept and shell implementation. This repository specifically represents the Rust rewrite and TUI direction maintained in this fork by [@lorisleban](https://github.com/lorisleban).
-
-The old top-level `ani-cli` shell script is kept only as historical/reference material for now. It is not the maintained app surface for this fork.
+---
 
 ## Contributing
 
-- [CONTRIBUTING.md](./CONTRIBUTING.md)
-- [hacking.md](./hacking.md)
-- [LEGACY_SHELL_SCRIPT.md](./LEGACY_SHELL_SCRIPT.md)
-- [disclaimer.md](./disclaimer.md)
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [hacking.md](hacking.md).
+
+Before opening a PR:
+
+```sh
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+cargo build --release
+```
+
+---
+
+## Legal
+
+ani-cli streams publicly accessible content served by third-party sites. See [disclaimer.md](disclaimer.md).
+
+Licensed under the [GNU General Public License v3.0](LICENSE).
