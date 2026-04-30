@@ -1,2 +1,2 @@
 pub use crate::domain::history::WatchEntry;
-pub use crate::persistence::sqlite_history::Database;
+pub use crate::persistence::sqlite_history::{Database, NewWatchSession};

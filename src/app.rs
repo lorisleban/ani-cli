@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use crate::api::{AnimeResult, EpisodeUrl, Mode};
-use crate::db::{Database, WatchEntry};
+use crate::db::{Database, NewWatchSession, WatchEntry};
 use crate::player::{self, PlayerType};
 use crate::theme::Theme;
 
@@ -48,6 +48,7 @@ pub struct App {
     pub current_episode: Option<String>,
     pub playing_title: Option<String>,
     pub episode_url: Option<EpisodeUrl>,
+    pub active_watch_session_id: Option<i64>,
 
     // History
     pub history: Vec<WatchEntry>,
@@ -96,6 +97,7 @@ impl App {
             current_episode: None,
             playing_title: None,
             episode_url: None,
+            active_watch_session_id: None,
             history,
             history_selected: 0,
             continue_watching,
@@ -166,34 +168,59 @@ impl App {
     }
 
     pub fn play_episode(&mut self) -> Result<(), String> {
-        let anime = self.selected_anime.as_ref().ok_or("No anime selected")?;
+        let anime = self
+            .selected_anime
+            .as_ref()
+            .ok_or("No anime selected")?
+            .clone();
         let ep = self
             .episodes
             .get(self.episode_selected)
             .ok_or("No episode selected")?
             .clone();
 
-        let title = format!("{} — Episode {}", anime.title, ep);
+        let title = format!("{} - Episode {}", anime.title, ep);
         self.current_episode = Some(ep.clone());
         self.playing_title = Some(title.clone());
 
-        self.db
-            .upsert_watch(&anime.id, &anime.title, &ep, Some(anime.episode_count))
+        self.stop_active_watch_session();
+        let session_id = self
+            .db
+            .start_watch_session(NewWatchSession {
+                anime_id: &anime.id,
+                title: &anime.title,
+                episode: &ep,
+                total_episodes: Some(anime.episode_count),
+                player: self.player_type.name(),
+                mode: self.mode.as_str(),
+                quality: &self.quality,
+            })
             .map_err(|e| format!("history: {}", e))?;
-        self.refresh_history();
+        self.active_watch_session_id = Some(session_id);
 
         if let Some(ref url_info) = self.episode_url {
-            player::launch_player(
+            if let Err(err) = player::launch_player(
                 self.player_type,
                 &url_info.url,
                 &title,
                 url_info.referer.as_deref(),
                 url_info.subtitle.as_deref(),
-            )?;
+            ) {
+                self.stop_active_watch_session();
+                return Err(err);
+            }
         }
 
+        self.refresh_history();
         self.navigate(Screen::NowPlaying);
         Ok(())
+    }
+
+    pub fn stop_active_watch_session(&mut self) {
+        if let Some(session_id) = self.active_watch_session_id.take() {
+            let _ = self.db.stop_watch_session(session_id);
+            self.refresh_history();
+        }
     }
 
     pub fn next_episode(&mut self) -> bool {
