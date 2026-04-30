@@ -5,6 +5,12 @@ use crate::db::{Database, NewWatchSession, WatchEntry};
 use crate::player::{self, PlayerType};
 use crate::theme::Theme;
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct AppOptions {
+    pub player_type: Option<PlayerType>,
+    pub mode: Option<Mode>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Screen {
     Home,
@@ -74,6 +80,10 @@ pub struct App {
 
 impl App {
     pub fn new() -> Self {
+        Self::with_options(AppOptions::default())
+    }
+
+    pub fn with_options(options: AppOptions) -> Self {
         let db = Database::new().expect("Failed to initialize database");
         let history = db.get_history().unwrap_or_default();
         let continue_watching = db.get_continue_watching().unwrap_or_default();
@@ -106,8 +116,8 @@ impl App {
             splash_tick: 0,
             loading: false,
             key_seq: None,
-            player_type: PlayerType::detect(),
-            mode: Mode::Sub,
+            player_type: options.player_type.unwrap_or_else(PlayerType::detect),
+            mode: options.mode.unwrap_or(Mode::Sub),
             quality: "best".to_string(),
             db,
         }

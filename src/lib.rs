@@ -11,3 +11,4 @@ pub mod runtime;
 pub mod services;
 pub mod theme;
 pub mod ui;
+pub mod update;

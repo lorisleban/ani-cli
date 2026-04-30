@@ -40,8 +40,18 @@ impl Database {
         Ok(db)
     }
 
-    pub fn resolve_db_path_for_cli() -> Result<PathBuf> {
-        Self::resolve_db_path()
+    pub fn preferred_db_path_for_cli() -> PathBuf {
+        Self::candidate_paths()
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| PathBuf::from(".").join(".ani-cli").join("history.db"))
+    }
+
+    pub fn data_dir_for_cli() -> PathBuf {
+        Self::preferred_db_path_for_cli()
+            .parent()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("."))
     }
 
     fn migrate(&self) -> Result<()> {

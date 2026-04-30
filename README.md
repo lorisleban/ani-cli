@@ -124,9 +124,20 @@ Stable CLI entrypoints:
 ani-cli --help
 ani-cli --version
 ani-cli doctor
+ani-cli config path
+ani-cli check-update
+ani-cli upgrade
+ani-cli completion powershell
 ```
 
 The main playback workflow is still fully interactive and TUI-first.
+
+Optional launch overrides:
+
+```sh
+ani-cli --player mpv
+ani-cli --mode dub
+```
 
 ## TUI controls
 
@@ -206,6 +217,22 @@ To inspect local setup and player detection:
 ```sh
 ani-cli doctor
 ```
+
+To inspect the resolved local history path:
+
+```sh
+ani-cli config path
+ani-cli config path data-dir
+```
+
+To check for releases or self-upgrade:
+
+```sh
+ani-cli check-update
+ani-cli upgrade
+```
+
+Package-managed installs are not replaced in place. In those cases, `upgrade` prints the package-manager action to use instead.
 
 ## Development
 
