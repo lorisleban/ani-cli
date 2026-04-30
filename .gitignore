@@ -1,0 +1,10 @@
+/target
+/.agents/
+/claudecode/
+/codex/
+/opencode/
+/pi-mono/
+/telemetry-id
+/skills-lock.json
+/CODEBASE_MAP/
+/UI_REFERENCE_COMPILED.md
