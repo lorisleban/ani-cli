@@ -2,7 +2,7 @@
 
 A terminal UI for watching anime — search, track, and play without leaving your shell.
 
-Originally based on [ani-cli](https://github.com/pystardust/ani-cli).
+Originally a fork of [ani-cli](https://github.com/pystardust/ani-cli).
 This project has since evolved into a separate implementation with different architecture and backend behavior.
 
 > **Maintained by [@lorisleban](https://github.com/lorisleban)**
