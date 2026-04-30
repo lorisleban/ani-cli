@@ -6,6 +6,7 @@ use clap_complete::{generate, Shell};
 
 use crate::api::Mode;
 use crate::app::AppOptions;
+use crate::constants::default_discord_client_id;
 use crate::db::Database;
 use crate::player::PlayerType;
 use crate::update::{self, UpgradeOutcome};
@@ -22,6 +23,8 @@ pub struct Cli {
     player: Option<PlayerArg>,
     #[arg(long, global = true, value_enum)]
     mode: Option<ModeArg>,
+    #[arg(long, global = true, env = "ANI_CLI_DISCORD_CLIENT_ID")]
+    discord_client_id: Option<String>,
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -106,6 +109,9 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             crate::runtime::run(AppOptions {
                 player_type: cli.player.map(Into::into),
                 mode: cli.mode.map(Into::into),
+                discord_client_id: cli
+                    .discord_client_id
+                    .or_else(default_discord_client_id),
             })
             .await
         }
@@ -136,6 +142,12 @@ fn doctor_report() -> String {
         &mut report,
         "api debug env: {}",
         std::env::var("ANI_CLI_DEBUG_API").unwrap_or_else(|_| "unset".to_string())
+    )
+    .expect("write to string");
+    writeln!(
+        &mut report,
+        "discord client id env: {}",
+        std::env::var("ANI_CLI_DISCORD_CLIENT_ID").unwrap_or_else(|_| "unset".to_string())
     )
     .expect("write to string");
 

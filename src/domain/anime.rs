@@ -5,6 +5,18 @@ pub struct AnimeResult {
     pub episode_count: u32,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct AnimePresenceMetadata {
+    pub canonical_title: Option<String>,
+    pub image_url: Option<String>,
+    pub external_url: Option<String>,
+    pub media_type: Option<String>,
+    pub episode_count: Option<u32>,
+    pub score: Option<f64>,
+    pub season: Option<String>,
+    pub year: Option<i32>,
+}
+
 #[derive(Debug, Clone)]
 pub struct EpisodeUrl {
     pub url: String,

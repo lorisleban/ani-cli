@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
@@ -7,6 +8,16 @@ use std::os::unix::process::CommandExt;
 use std::os::windows::process::CommandExt;
 
 pub use crate::domain::playback::PlayerType;
+
+#[derive(Debug, Clone)]
+pub enum PlayerActivityMonitor {
+    Mpv { endpoint: String },
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct LaunchResult {
+    pub activity_monitor: Option<PlayerActivityMonitor>,
+}
 
 impl PlayerType {
     pub fn detect() -> Self {
@@ -29,10 +40,11 @@ pub fn launch_player(
     title: &str,
     referer: Option<&str>,
     subtitle: Option<&str>,
-) -> Result<(), String> {
+    enable_activity_monitor: bool,
+) -> Result<LaunchResult, String> {
     match player {
         PlayerType::Iina => launch_iina(url, title, referer, subtitle),
-        PlayerType::Mpv => launch_mpv(url, title, referer, subtitle),
+        PlayerType::Mpv => launch_mpv(url, title, referer, subtitle, enable_activity_monitor),
         PlayerType::Vlc => launch_vlc(url, title, referer),
     }
 }
@@ -42,7 +54,7 @@ fn launch_iina(
     title: &str,
     referer: Option<&str>,
     subtitle: Option<&str>,
-) -> Result<(), String> {
+) -> Result<LaunchResult, String> {
     #[cfg(target_os = "macos")]
     {
         let iina_cli = iina_cli_path().ok_or_else(|| "IINA not found".to_string())?;
@@ -62,7 +74,7 @@ fn launch_iina(
         cmd.arg(url);
 
         spawn_detached(&mut cmd).map_err(|e| format!("Failed to launch iina: {e}"))?;
-        return Ok(());
+        return Ok(LaunchResult::default());
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -77,10 +89,19 @@ fn launch_mpv(
     title: &str,
     referer: Option<&str>,
     subtitle: Option<&str>,
-) -> Result<(), String> {
+    enable_activity_monitor: bool,
+) -> Result<LaunchResult, String> {
     let player = player_command(PlayerType::Mpv).ok_or_else(|| "mpv not found".to_string())?;
     let mut cmd = Command::new(player);
     cmd.arg(format!("--force-media-title={title}"));
+
+    let monitor = if enable_activity_monitor {
+        let endpoint = mpv_ipc_endpoint();
+        cmd.arg(format!("--input-ipc-server={endpoint}"));
+        Some(PlayerActivityMonitor::Mpv { endpoint })
+    } else {
+        None
+    };
 
     if let Some(refr) = referer {
         cmd.arg(format!("--referrer={refr}"));
@@ -91,10 +112,12 @@ fn launch_mpv(
     cmd.arg(url);
 
     spawn_detached(&mut cmd).map_err(|e| format!("Failed to launch mpv: {e}"))?;
-    Ok(())
+    Ok(LaunchResult {
+        activity_monitor: monitor,
+    })
 }
 
-fn launch_vlc(url: &str, title: &str, referer: Option<&str>) -> Result<(), String> {
+fn launch_vlc(url: &str, title: &str, referer: Option<&str>) -> Result<LaunchResult, String> {
     let player = player_command(PlayerType::Vlc).ok_or_else(|| "VLC not found".to_string())?;
     let mut cmd = Command::new(player);
     cmd.arg("--play-and-exit")
@@ -106,7 +129,7 @@ fn launch_vlc(url: &str, title: &str, referer: Option<&str>) -> Result<(), Strin
     cmd.arg(url);
 
     spawn_detached(&mut cmd).map_err(|e| format!("Failed to launch vlc: {e}"))?;
-    Ok(())
+    Ok(LaunchResult::default())
 }
 
 fn player_command(player: PlayerType) -> Option<PathBuf> {
@@ -275,5 +298,25 @@ fn spawn_detached(cmd: &mut Command) -> std::io::Result<()> {
 
         cmd.spawn()?;
         Ok(())
+    }
+}
+
+fn mpv_ipc_endpoint() -> String {
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0);
+
+    #[cfg(windows)]
+    {
+        format!(r"\\.\pipe\ani-cli-mpv-{stamp}")
+    }
+
+    #[cfg(not(windows))]
+    {
+        std::env::temp_dir()
+            .join(format!("ani-cli-mpv-{stamp}.sock"))
+            .display()
+            .to_string()
     }
 }

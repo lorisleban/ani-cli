@@ -367,7 +367,15 @@ async fn play_selected(app: &mut App, api: &ApiClient, terminal: &mut AppTermina
     app.toast("fetching stream...", false);
     let _ = terminal.draw(|f| ui::render(f, app));
 
-    match api.get_episode_url(&anime.id, &ep, &app.quality).await {
+    let metadata_client = api.clone();
+    let (stream_result, metadata_result) = tokio::join!(
+        api.get_episode_url(&anime.id, &ep, &app.quality),
+        metadata_client.fetch_presence_metadata(&anime.title, Some(anime.episode_count))
+    );
+
+    app.active_presence_metadata = metadata_result.ok().flatten();
+
+    match stream_result {
         Ok(url) => {
             app.episode_url = Some(url);
             if let Err(e) = app.play_episode() {

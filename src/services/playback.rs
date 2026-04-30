@@ -1,5 +1,6 @@
 use crate::domain::playback::PlayerType;
 use crate::player;
+use crate::player::LaunchResult;
 
 pub trait PlayerLauncher {
     fn launch(
@@ -9,7 +10,8 @@ pub trait PlayerLauncher {
         title: &str,
         referer: Option<&str>,
         subtitle: Option<&str>,
-    ) -> Result<(), String>;
+        enable_activity_monitor: bool,
+    ) -> Result<LaunchResult, String>;
 }
 
 pub struct ExternalPlayerLauncher;
@@ -22,7 +24,15 @@ impl PlayerLauncher for ExternalPlayerLauncher {
         title: &str,
         referer: Option<&str>,
         subtitle: Option<&str>,
-    ) -> Result<(), String> {
-        player::launch_player(player, url, title, referer, subtitle)
+        enable_activity_monitor: bool,
+    ) -> Result<LaunchResult, String> {
+        player::launch_player(
+            player,
+            url,
+            title,
+            referer,
+            subtitle,
+            enable_activity_monitor,
+        )
     }
 }

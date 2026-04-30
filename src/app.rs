@@ -2,13 +2,16 @@ use std::time::Instant;
 
 use crate::api::{AnimeResult, EpisodeUrl, Mode};
 use crate::db::{Database, NewWatchSession, WatchEntry};
+use crate::discord::{session_started_at_unix, DiscordPresence, PlayerActivityMonitor, PresencePlayback};
+use crate::domain::anime::AnimePresenceMetadata;
 use crate::player::{self, PlayerType};
 use crate::theme::Theme;
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct AppOptions {
     pub player_type: Option<PlayerType>,
     pub mode: Option<Mode>,
+    pub discord_client_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -55,6 +58,8 @@ pub struct App {
     pub playing_title: Option<String>,
     pub episode_url: Option<EpisodeUrl>,
     pub active_watch_session_id: Option<i64>,
+    pub active_presence_token: Option<u64>,
+    pub active_presence_metadata: Option<AnimePresenceMetadata>,
 
     // History
     pub history: Vec<WatchEntry>,
@@ -74,6 +79,7 @@ pub struct App {
     pub player_type: PlayerType,
     pub mode: Mode,
     pub quality: String,
+    pub discord_presence: Option<DiscordPresence>,
 
     pub db: Database,
 }
@@ -108,6 +114,8 @@ impl App {
             playing_title: None,
             episode_url: None,
             active_watch_session_id: None,
+            active_presence_token: None,
+            active_presence_metadata: None,
             history,
             history_selected: 0,
             continue_watching,
@@ -119,6 +127,7 @@ impl App {
             player_type: options.player_type.unwrap_or_else(PlayerType::detect),
             mode: options.mode.unwrap_or(Mode::Sub),
             quality: "best".to_string(),
+            discord_presence: options.discord_client_id.map(DiscordPresence::new),
             db,
         }
     }
@@ -209,15 +218,43 @@ impl App {
         self.active_watch_session_id = Some(session_id);
 
         if let Some(ref url_info) = self.episode_url {
-            if let Err(err) = player::launch_player(
+            let launch = match player::launch_player(
                 self.player_type,
                 &url_info.url,
                 &title,
                 url_info.referer.as_deref(),
                 url_info.subtitle.as_deref(),
+                self.discord_presence.is_some(),
             ) {
-                self.stop_active_watch_session();
-                return Err(err);
+                Ok(launch) => launch,
+                Err(err) => {
+                    self.stop_active_watch_session();
+                    return Err(err);
+                }
+            };
+
+            if let Some(discord_presence) = self.discord_presence.as_ref() {
+                let token = discord_presence.next_token();
+                let monitor = launch.activity_monitor.map(|monitor| match monitor {
+                    player::PlayerActivityMonitor::Mpv { endpoint } => {
+                        PlayerActivityMonitor::Mpv { endpoint }
+                    }
+                });
+                discord_presence.start_playback(
+                    PresencePlayback {
+                        token,
+                        anime_title: anime.title.clone(),
+                        episode: ep.clone(),
+                        total_episodes: Some(anime.episode_count),
+                        player: self.player_type,
+                        mode: self.mode.as_str().to_string(),
+                        quality: url_info.quality.clone(),
+                        started_at_unix: session_started_at_unix(),
+                        metadata: self.active_presence_metadata.clone(),
+                    },
+                    monitor,
+                );
+                self.active_presence_token = Some(token);
             }
         }
 
@@ -230,6 +267,11 @@ impl App {
         if let Some(session_id) = self.active_watch_session_id.take() {
             let _ = self.db.stop_watch_session(session_id);
             self.refresh_history();
+        }
+        if let Some(token) = self.active_presence_token.take() {
+            if let Some(discord_presence) = self.discord_presence.as_ref() {
+                discord_presence.stop(token);
+            }
         }
     }
 

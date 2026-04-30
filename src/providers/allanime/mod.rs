@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 use urlencoding::encode;
 
-use crate::domain::anime::{AnimeResult, EpisodeUrl, Mode};
+use crate::domain::anime::{AnimePresenceMetadata, AnimeResult, EpisodeUrl, Mode};
 
 mod config;
 mod transport;
@@ -37,6 +37,7 @@ fn aes_256_ctr_decrypt(key: &[u8], ctr: &[u8; 16], ciphertext: &[u8]) -> Result<
     Ok(plain)
 }
 
+#[derive(Clone)]
 pub struct ApiClient {
     client: Client,
     pub mode: Mode,
@@ -361,6 +362,47 @@ impl ApiClient {
             }),
             None => Err("No matching quality found".to_string()),
         }
+    }
+
+    pub async fn fetch_presence_metadata(
+        &self,
+        title: &str,
+        episode_count_hint: Option<u32>,
+    ) -> Result<Option<AnimePresenceMetadata>, String> {
+        let title = title.trim();
+        if title.is_empty() {
+            return Ok(None);
+        }
+
+        let encoded = encode(title);
+        let mut candidates = Vec::new();
+        if let Ok(base) = std::env::var("ANI_CLI_METADATA_API_BASE") {
+            candidates.push(base);
+        } else {
+            candidates.push("https://jikan.lorisleban.uk/v4".to_string());
+            candidates.push("https://api.jikan.moe/v4".to_string());
+        }
+
+        for base in candidates {
+            let url = format!("{}/anime?q={encoded}&limit=1", base.trim_end_matches('/'));
+            let response = match self.client.get(&url).send().await {
+                Ok(response) => response,
+                Err(_) => continue,
+            };
+            let text = match response.text().await {
+                Ok(text) => text,
+                Err(_) => continue,
+            };
+            let json: Value = match serde_json::from_str(&text) {
+                Ok(json) => json,
+                Err(_) => continue,
+            };
+            if let Some(metadata) = parse_presence_metadata(&json, episode_count_hint) {
+                return Ok(Some(metadata));
+            }
+        }
+
+        Ok(None)
     }
 
     fn decode_tobeparsed(&self, blob: &str) -> Result<Vec<(String, String)>, String> {
@@ -744,6 +786,51 @@ fn sort_episode_numbers(episodes: &mut [String]) {
             .partial_cmp(&b_num)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
+}
+
+fn parse_presence_metadata(
+    json: &Value,
+    episode_count_hint: Option<u32>,
+) -> Option<AnimePresenceMetadata> {
+    let first = json.get("data")?.as_array()?.first()?;
+    let canonical_title = first
+        .get("title_english")
+        .and_then(Value::as_str)
+        .or_else(|| first.get("title").and_then(Value::as_str))
+        .map(str::to_string);
+    let image_url = first
+        .pointer("/images/webp/large_image_url")
+        .and_then(Value::as_str)
+        .or_else(|| first.pointer("/images/jpg/large_image_url").and_then(Value::as_str))
+        .or_else(|| first.pointer("/images/jpg/image_url").and_then(Value::as_str))
+        .map(str::to_string);
+    let external_url = first.get("url").and_then(Value::as_str).map(str::to_string);
+    let media_type = first.get("type").and_then(Value::as_str).map(str::to_string);
+    let episode_count = first
+        .get("episodes")
+        .and_then(Value::as_u64)
+        .map(|value| value as u32)
+        .or(episode_count_hint);
+    let score = first.get("score").and_then(Value::as_f64);
+    let season = first.get("season").and_then(Value::as_str).map(|season| {
+        let mut chars = season.chars();
+        match chars.next() {
+            Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+            None => season.to_string(),
+        }
+    });
+    let year = first.get("year").and_then(Value::as_i64).map(|value| value as i32);
+
+    Some(AnimePresenceMetadata {
+        canonical_title,
+        image_url,
+        external_url,
+        media_type,
+        episode_count,
+        score,
+        season,
+        year,
+    })
 }
 
 #[cfg(test)]
