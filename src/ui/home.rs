@@ -19,6 +19,8 @@ pub fn render(f: &mut Frame, app: &App) {
         ("s", "search"),
         ("w", "history"),
         ("d", "sub/dub"),
+        ("U", "update"),
+        ("R", "notes"),
     ]
     .iter()
     .flat_map(|(k, a)| theme::keyhint(k, a, t))

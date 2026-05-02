@@ -18,6 +18,8 @@ pub fn render(f: &mut Frame, app: &App) {
         ("jk", "move"),
         ("x", "delete"),
         ("X", "clear all"),
+        ("U", "update"),
+        ("R", "notes"),
         ("Esc", "back"),
     ]
     .iter()

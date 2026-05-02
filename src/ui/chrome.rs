@@ -1,8 +1,8 @@
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::Paragraph,
+    widgets::{Block, Borders, Paragraph},
     Frame,
 };
 
@@ -25,6 +25,7 @@ pub fn shell<'a>(f: &mut Frame, app: &App, context: &str, hints: Vec<Span<'a>>) 
     render_mast(f, chunks[0], app, context);
     render_rail(f, chunks[2], app, hints);
     render_toasts(f, chunks[1], app);
+    render_update_popup(f, chunks[1], app);
 
     chunks[1]
 }
@@ -104,6 +105,70 @@ fn render_toasts(f: &mut Frame, stage: Rect, app: &App) {
     let y = stage.y + stage.height.saturating_sub(h + 1);
     let toast_area = Rect::new(stage.x, y, stage.width, h);
     f.render_widget(Paragraph::new(lines), toast_area);
+}
+
+fn render_update_popup(f: &mut Frame, stage: Rect, app: &App) {
+    if !app.update_popup_visible {
+        return;
+    }
+    let info = match &app.update_available {
+        Some(info) => info,
+        None => return,
+    };
+    let t = &app.theme;
+    let width = stage.width.min(54).max(32);
+    let height = 7u16;
+    if stage.width < width || stage.height < height + 2 {
+        return;
+    }
+    let x = stage.x + (stage.width - width) / 2;
+    let y = stage.y + 1;
+    let area = Rect::new(x, y, width, height);
+
+    let title = Line::from(Span::styled(
+        "update available",
+        Style::default().fg(t.gold).add_modifier(Modifier::BOLD),
+    ));
+    let body = Line::from(Span::styled(
+        format!("new version v{}", info.latest_version),
+        theme::fg(t.text_dim),
+    ));
+    let action = Line::from(vec![
+        Span::styled(
+            " U ",
+            Style::default()
+                .fg(t.bg)
+                .bg(t.moon)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("  update now", theme::fg(t.text_dim)),
+        Span::raw("   "),
+        Span::styled(
+            " R ",
+            Style::default()
+                .fg(t.bg)
+                .bg(t.gold)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("  notes", theme::fg(t.text_dim)),
+        Span::raw("   "),
+        Span::styled(
+            " Esc ",
+            Style::default()
+                .fg(t.bg)
+                .bg(t.text_subtle)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("  dismiss", theme::fg(t.text_dim)),
+    ]);
+    let text = vec![Line::raw(""), title, Line::raw(""), body, Line::raw(""), action];
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(theme::fg(t.border));
+    let paragraph = Paragraph::new(text)
+        .block(block)
+        .alignment(Alignment::Center);
+    f.render_widget(paragraph, area);
 }
 
 /// A divider line of dots, full width.

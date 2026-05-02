@@ -9,7 +9,7 @@ use crate::app::AppOptions;
 use crate::constants::default_discord_client_id;
 use crate::db::Database;
 use crate::player::PlayerType;
-use crate::update::{self, UpgradeOutcome};
+use crate::update::{self, UpdateOutcome};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -160,26 +160,27 @@ fn config_path(kind: ConfigPathArg) -> Result<String, String> {
 }
 
 async fn check_update_report() -> Result<String, String> {
-    let summary = update::check_for_update().await?;
-    if summary.update_available {
+    let current = update::current_version();
+    let result = update::check_for_update().await?;
+    if let Some(info) = result {
         Ok(format!(
             "update available: {} -> {} ({})",
-            summary.current_version, summary.latest_version, summary.release_url
+            current, info.latest_version, info.release_url
         ))
     } else {
-        Ok(format!(
-            "up to date: {} ({})",
-            summary.current_version, summary.release_url
-        ))
+        Ok(format!("up to date: {}", current))
     }
 }
 
 async fn run_upgrade() -> Result<String, String> {
-    match update::upgrade().await? {
-        UpgradeOutcome::UpToDate { version } => Ok(format!("already on latest version: {version}")),
-        UpgradeOutcome::Updated { version } => Ok(format!("updated to version {version}")),
-        UpgradeOutcome::UsePackageManager { message } => Ok(message),
-    }
+    let outcome = update::perform_update().await?;
+    Ok(match outcome {
+        UpdateOutcome {
+            message,
+            restart_required: true,
+        } => format!("{} (restart required)", message),
+        UpdateOutcome { message, .. } => message,
+    })
 }
 
 impl From<PlayerArg> for PlayerType {

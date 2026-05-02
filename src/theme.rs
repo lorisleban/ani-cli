@@ -139,18 +139,33 @@ pub fn render_toasts<'a>(app: &'a App, width: u16) -> Vec<Line<'a>> {
         let age = toast.born.elapsed().as_millis();
         let frame_idx = ((age / 30) as usize).min(TOAST_REVEAL.len() - 1);
         let bar_char = TOAST_REVEAL[frame_idx];
-        let (bar_color, label_color) = if toast.is_error {
-            (t.coral, t.coral)
+        let (bar_color, label_text) = if toast.is_error {
+            (t.coral, "ERR")
         } else {
-            (t.moon, t.text)
+            (t.moon, "INFO")
         };
-        let body = truncate(&toast.message, (width as usize).saturating_sub(6));
-        let pad = (width as usize).saturating_sub(body.chars().count() + 4);
+
+        let label = format!(" {} ", label_text);
+        let body_max = (width as usize)
+            .saturating_sub(label.chars().count())
+            .saturating_sub(8);
+        let body = truncate(&toast.message, body_max);
+        let pad = (width as usize)
+            .saturating_sub(body.chars().count() + label.chars().count() + 6);
+
         lines.push(Line::from(vec![
             Span::raw(" ".repeat(pad)),
             Span::styled(bar_char.to_string(), fg(bar_color)),
             Span::raw(" "),
-            Span::styled(body, fg(label_color)),
+            Span::styled(
+                label,
+                Style::default()
+                    .fg(t.bg)
+                    .bg(bar_color)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" "),
+            Span::styled(body, fg(t.text)),
             Span::raw(" "),
         ]));
     }

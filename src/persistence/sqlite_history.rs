@@ -161,6 +161,11 @@ impl Database {
                 remote_updated_at DATETIME,
                 version INTEGER NOT NULL DEFAULT 1,
                 PRIMARY KEY(entity_type, entity_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS app_state (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
             );",
         )?;
         self.backfill_local_data()?;
@@ -425,6 +430,27 @@ impl Database {
         self.conn.execute("DELETE FROM watch_events", [])?;
         self.conn.execute("DELETE FROM watch_sessions", [])?;
         self.conn.execute("DELETE FROM watch_state", [])?;
+        Ok(())
+    }
+
+    pub fn get_state(&self, key: &str) -> Result<Option<String>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT value FROM app_state WHERE key = ?1")?;
+        let mut rows = stmt.query([key])?;
+        if let Some(row) = rows.next()? {
+            Ok(Some(row.get(0)?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn set_state(&self, key: &str, value: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO app_state (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![key, value],
+        )?;
         Ok(())
     }
 

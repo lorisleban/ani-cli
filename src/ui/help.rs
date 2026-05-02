@@ -57,6 +57,8 @@ pub fn render(f: &mut Frame, app: &App) {
             ("g s", "go search"),
             ("g w", "go history"),
             ("g p", "go now-playing"),
+            ("U", "self-update"),
+            ("R", "release notes"),
             ("?", "this card"),
             ("Q", "quit"),
             ("ctrl-c", "quit (hard)"),

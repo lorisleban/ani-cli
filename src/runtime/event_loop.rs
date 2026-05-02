@@ -5,6 +5,8 @@ use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifier
 use super::terminal::AppTerminal;
 use crate::api::ApiClient;
 use crate::app::{App, Screen};
+use crate::update::{open_release_notes, perform_update, UpdateOutcome};
+use chrono::{DateTime, Utc};
 use crate::ui;
 
 const SEARCH_DEBOUNCE_MS: u64 = 180;
@@ -16,6 +18,9 @@ pub async fn run_app(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let tick_rate = Duration::from_millis(80);
     let mut last_tick = Instant::now();
+    let mut pending_update_check = start_update_check(app);
+    let mut pending_update_action: Option<tokio::task::JoinHandle<Result<UpdateOutcome, String>>> =
+        None;
 
     loop {
         terminal.draw(|f| ui::render(f, app))?;
@@ -50,6 +55,68 @@ pub async fn run_app(
 
         if !app.running {
             break;
+        }
+
+        if let Some(handle) = pending_update_check.take() {
+            if handle.is_finished() {
+                match handle.await {
+                    Ok(result) => match result {
+                        Ok(info) => apply_update_result(app, info),
+                        Err(err) => {
+                            app.toast(format!("update check failed: {}", err), true);
+                            app.update_check_manual = false;
+                        }
+                    },
+                    Err(err) => {
+                        app.toast(format!("update check failed: {}", err), true);
+                        app.update_check_manual = false;
+                    }
+                }
+            } else {
+                pending_update_check = Some(handle);
+            }
+        }
+
+        if pending_update_check.is_none() {
+            pending_update_check = start_update_check(app);
+        }
+
+        if app.update_requested && pending_update_action.is_none() {
+            app.update_requested = false;
+            app.update_in_progress = true;
+            app.update_popup_visible = false;
+            app.toast("updating...", false);
+            pending_update_action = Some(tokio::spawn(async { perform_update().await }));
+        }
+
+        if let Some(handle) = pending_update_action.take() {
+            if handle.is_finished() {
+                app.update_in_progress = false;
+                match handle.await {
+                    Ok(outcome) => match outcome {
+                        Ok(result) => {
+                            app.toast(result.message, false);
+                            if result.restart_required {
+                                app.toast("restart required to finish update", false);
+                            }
+                        }
+                        Err(err) => app.toast(format!("update failed: {}", err), true),
+                    },
+                    Err(err) => app.toast(format!("update failed: {}", err), true),
+                }
+            } else {
+                pending_update_action = Some(handle);
+            }
+        }
+
+        if app.update_notes_requested {
+            app.update_notes_requested = false;
+            if let Some(info) = app.update_available.clone() {
+                match open_release_notes(&info.release_url) {
+                    Ok(()) => app.toast("opened release notes", false),
+                    Err(err) => app.toast(format!("release notes failed: {}", err), true),
+                }
+            }
         }
 
         maybe_run_debounced_search(app, &mut api, terminal).await;
@@ -144,6 +211,30 @@ fn handle_global(app: &mut App, key: KeyEvent) -> bool {
     }
 
     match key.code {
+        KeyCode::Char('U') => {
+            if app.update_in_progress {
+                app.toast("update already running", false);
+            } else if app.update_available.is_some() {
+                app.update_requested = true;
+            } else {
+                app.toast("checking for updates...", false);
+                app.update_check_in_progress = true;
+                app.update_check_manual = true;
+            }
+            true
+        }
+        KeyCode::Char('R') => {
+            if app.update_available.is_some() {
+                app.update_notes_requested = true;
+            } else {
+                app.toast("no release notes available", false);
+            }
+            true
+        }
+        KeyCode::Esc if app.update_popup_visible => {
+            app.update_popup_visible = false;
+            true
+        }
         KeyCode::Char('?') => {
             app.navigate(Screen::Help);
             true
@@ -181,6 +272,29 @@ fn handle_global(app: &mut App, key: KeyEvent) -> bool {
         }
         _ => false,
     }
+}
+
+fn start_update_check(
+    app: &mut App,
+) -> Option<tokio::task::JoinHandle<Result<Option<crate::update::UpdateInfo>, String>>> {
+    if !app.update_check_in_progress {
+        return None;
+    }
+    app.update_check_in_progress = false;
+    Some(tokio::spawn(async { crate::update::check_for_update().await }))
+}
+
+fn apply_update_result(app: &mut App, result: Option<crate::update::UpdateInfo>) {
+    let now = DateTime::<Utc>::from(std::time::SystemTime::now()).to_rfc3339();
+    let _ = app.db.set_state("update_last_checked", &now);
+    if let Some(info) = result {
+        app.update_available = Some(info);
+        app.update_popup_visible = true;
+        app.toast("update ready — press U to install, R for notes", false);
+    } else if app.update_check_manual {
+        app.toast("no updates found", false);
+    }
+    app.update_check_manual = false;
 }
 
 async fn on_home(app: &mut App, key: KeyEvent, api: &ApiClient, terminal: &mut AppTerminal) {

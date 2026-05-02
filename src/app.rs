@@ -84,6 +84,15 @@ pub struct App {
     pub discord_presence: Option<DiscordPresence>,
 
     pub db: Database,
+
+    // Update status
+    pub update_available: Option<crate::update::UpdateInfo>,
+    pub update_check_in_progress: bool,
+    pub update_popup_visible: bool,
+    pub update_requested: bool,
+    pub update_in_progress: bool,
+    pub update_check_manual: bool,
+    pub update_notes_requested: bool,
 }
 
 impl App {
@@ -131,6 +140,13 @@ impl App {
             quality: "best".to_string(),
             discord_presence: options.discord_client_id.map(DiscordPresence::new),
             db,
+            update_available: None,
+            update_check_in_progress: false,
+            update_popup_visible: false,
+            update_requested: false,
+            update_in_progress: false,
+            update_check_manual: false,
+            update_notes_requested: false,
         }
     }
 

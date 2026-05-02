@@ -18,6 +18,8 @@ pub fn render(f: &mut Frame, app: &App) {
         ("p / h", "prev"),
         ("r", "replay"),
         ("s", "pick ep"),
+        ("U", "update"),
+        ("R", "notes"),
         ("Esc", "back"),
     ]
     .iter()
