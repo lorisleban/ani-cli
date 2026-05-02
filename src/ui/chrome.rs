@@ -116,7 +116,7 @@ fn render_update_popup(f: &mut Frame, stage: Rect, app: &App) {
         None => return,
     };
     let t = &app.theme;
-    let width = stage.width.min(54).max(32);
+    let width = stage.width.clamp(32, 54);
     let height = 7u16;
     if stage.width < width || stage.height < height + 2 {
         return;

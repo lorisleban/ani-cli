@@ -74,7 +74,7 @@ fn launch_iina(
         cmd.arg(url);
 
         spawn_detached(&mut cmd).map_err(|e| format!("Failed to launch iina: {e}"))?;
-        return Ok(LaunchResult::default());
+        Ok(LaunchResult::default())
     }
 
     #[cfg(not(target_os = "macos"))]
