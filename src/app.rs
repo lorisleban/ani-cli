@@ -7,6 +7,7 @@ use crate::discord::{
 };
 use crate::domain::anime::AnimePresenceMetadata;
 use crate::domain::jikan::JikanAnime;
+use crate::domain::jikan::JikanSeasonInfo;
 use crate::player::{self, PlayerType};
 use crate::providers::jikan::JikanClient;
 use crate::theme::Theme;
@@ -26,6 +27,8 @@ pub enum Screen {
     WatchHistory,
     NowPlaying,
     Help,
+    SeasonBrowse,
+    Schedule,
 }
 
 pub struct Toast {
@@ -91,6 +94,23 @@ pub struct App {
     pub db: Database,
     pub jikan: JikanClient,
 
+    // Season browse
+    pub season_anime: Vec<JikanAnime>,
+    pub season_selected: usize,
+    pub season_loading: bool,
+    pub season_year: Option<i32>,
+    pub season_name: Option<String>,
+    pub season_page: u32,
+    pub season_has_next: bool,
+    pub season_list: Vec<JikanSeasonInfo>,
+    pub season_filter_type: Option<String>,
+
+    // Schedule
+    pub schedule_anime: Vec<JikanAnime>,
+    pub schedule_selected: usize,
+    pub schedule_loading: bool,
+    pub schedule_day: String,
+
     // Update status
     pub update_available: Option<crate::update::UpdateInfo>,
     pub update_check_in_progress: bool,
@@ -151,6 +171,19 @@ impl App {
             discord_presence: options.discord_client_id.map(DiscordPresence::new),
             db,
             jikan,
+            season_anime: Vec::new(),
+            season_selected: 0,
+            season_loading: false,
+            season_year: None,
+            season_name: None,
+            season_page: 1,
+            season_has_next: false,
+            season_list: Vec::new(),
+            season_filter_type: None,
+            schedule_anime: Vec::new(),
+            schedule_selected: 0,
+            schedule_loading: false,
+            schedule_day: "monday".to_string(),
             update_available: None,
             update_check_in_progress: false,
             update_popup_visible: false,

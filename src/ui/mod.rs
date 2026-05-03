@@ -4,7 +4,9 @@ pub mod help;
 pub mod history;
 pub mod home;
 pub mod playing;
+pub mod schedule;
 pub mod search;
+pub mod season;
 
 use ratatui::Frame;
 
@@ -18,5 +20,7 @@ pub fn render(f: &mut Frame, app: &App) {
         Screen::WatchHistory => history::render(f, app),
         Screen::NowPlaying => playing::render(f, app),
         Screen::Help => help::render(f, app),
+        Screen::SeasonBrowse => season::render(f, app),
+        Screen::Schedule => schedule::render(f, app),
     }
 }

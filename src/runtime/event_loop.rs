@@ -49,6 +49,8 @@ pub async fn run_app(
                     Screen::WatchHistory => on_history(app, key),
                     Screen::NowPlaying => on_playing(app, key, &api, terminal).await,
                     Screen::Help => on_help(app, key),
+                    Screen::SeasonBrowse => on_season(app, key, &mut api, terminal).await,
+                    Screen::Schedule => on_schedule(app, key, &mut api, terminal).await,
                 }
             }
         }
@@ -177,8 +179,20 @@ fn handle_global(app: &mut App, key: KeyEvent) -> bool {
                     return true;
                 }
                 KeyCode::Char('s') => {
-                    reset_search_state(app);
-                    app.navigate(Screen::Search);
+                    app.season_loading = true;
+                    app.season_anime.clear();
+                    app.season_selected = 0;
+                    app.season_page = 1;
+                    app.season_year = None;
+                    app.season_name = None;
+                    app.navigate(Screen::SeasonBrowse);
+                    return true;
+                }
+                KeyCode::Char('c') => {
+                    app.schedule_loading = true;
+                    app.schedule_anime.clear();
+                    app.schedule_selected = 0;
+                    app.navigate(Screen::Schedule);
                     return true;
                 }
                 KeyCode::Char('w') => {
@@ -598,4 +612,248 @@ fn on_help(app: &mut App, key: KeyEvent) {
     ) {
         app.go_back();
     }
+}
+
+async fn on_season(app: &mut App, key: KeyEvent, api: &mut ApiClient, terminal: &mut AppTerminal) {
+    if app.season_loading && app.season_anime.is_empty() {
+        let _ = terminal.draw(|f| ui::render(f, app));
+        fetch_season_page(app).await;
+    }
+
+    match key.code {
+        KeyCode::Esc => app.go_back(),
+        KeyCode::Up | KeyCode::Char('k') if app.season_selected > 0 => {
+            app.season_selected -= 1;
+        }
+        KeyCode::Down | KeyCode::Char('j') if app.season_selected + 1 < app.season_anime.len() => {
+            app.season_selected += 1;
+        }
+        KeyCode::Char('n') => {
+            if app.season_has_next {
+                app.season_page += 1;
+                app.season_loading = true;
+                let _ = terminal.draw(|f| ui::render(f, app));
+                fetch_season_page(app).await;
+            }
+        }
+        KeyCode::Char('t') => {
+            let types = [None, Some("TV"), Some("Movie"), Some("OVA"), Some("ONA")];
+            let current_idx = types
+                .iter()
+                .position(|t| t.as_deref() == app.season_filter_type.as_deref())
+                .unwrap_or(0);
+            let next_idx = (current_idx + 1) % types.len();
+            app.season_filter_type = types[next_idx].map(String::from);
+            app.season_page = 1;
+            app.season_loading = true;
+            let _ = terminal.draw(|f| ui::render(f, app));
+            fetch_season_page(app).await;
+        }
+        KeyCode::Char('[') => {
+            navigate_season(app, -1).await;
+            let _ = terminal.draw(|f| ui::render(f, app));
+        }
+        KeyCode::Char(']') => {
+            navigate_season(app, 1).await;
+            let _ = terminal.draw(|f| ui::render(f, app));
+        }
+        KeyCode::Enter => {
+            if let Some(anime) = app.season_anime.get(app.season_selected).cloned() {
+                enter_anime_from_jikan(app, &anime, api, terminal).await;
+            }
+        }
+        _ => {}
+    }
+}
+
+async fn fetch_season_page(app: &mut App) {
+    let jikan = app.jikan.clone();
+    let result = if let (Some(year), Some(season)) = (&app.season_year, &app.season_name) {
+        jikan.get_season(*year, season, app.season_page).await
+    } else {
+        jikan.get_current_season(app.season_page).await
+    };
+
+    match result {
+        Ok(page) => {
+            app.season_has_next = page.pagination.has_next_page;
+            let mut anime = page.data;
+            if let Some(ref filter) = app.season_filter_type {
+                anime.retain(|a| a.anime_type.as_deref() == Some(filter.as_str()));
+            }
+            if app.season_page == 1 {
+                app.season_anime = anime;
+            } else {
+                app.season_anime.extend(anime);
+            }
+            if app.season_year.is_none() {
+                if let Some(first) = app.season_anime.first() {
+                    app.season_year = first.year;
+                    app.season_name = first.season.clone();
+                }
+            }
+        }
+        Err(e) => app.toast(format!("season fetch failed: {}", e), true),
+    }
+    app.season_loading = false;
+}
+
+async fn navigate_season(app: &mut App, direction: i32) {
+    if app.season_list.is_empty() {
+        let jikan = app.jikan.clone();
+        match jikan.get_season_list().await {
+            Ok(list) => app.season_list = list,
+            Err(e) => {
+                app.toast(format!("season list failed: {}", e), true);
+                return;
+            }
+        }
+    }
+
+    let current_year = app.season_year.unwrap_or(2026);
+    let current_season = app
+        .season_name
+        .clone()
+        .unwrap_or_else(|| "spring".to_string());
+    let season_order = ["winter", "spring", "summer", "fall"];
+    let current_idx = season_order
+        .iter()
+        .position(|s| *s == current_season.to_lowercase())
+        .unwrap_or(1);
+
+    let new_idx = current_idx as i32 + direction;
+    let (new_year, new_season_idx) = if new_idx < 0 {
+        (current_year - 1, 3)
+    } else if new_idx >= 4 {
+        (current_year + 1, 0)
+    } else {
+        (current_year, new_idx as usize)
+    };
+
+    app.season_year = Some(new_year);
+    app.season_name = Some(season_order[new_season_idx].to_string());
+    app.season_page = 1;
+    app.season_selected = 0;
+    app.season_loading = true;
+    fetch_season_page(app).await;
+}
+
+async fn on_schedule(
+    app: &mut App,
+    key: KeyEvent,
+    api: &mut ApiClient,
+    terminal: &mut AppTerminal,
+) {
+    if app.schedule_loading && app.schedule_anime.is_empty() {
+        let _ = terminal.draw(|f| ui::render(f, app));
+        fetch_schedule_day(app).await;
+    }
+
+    let days = [
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "sunday",
+    ];
+    match key.code {
+        KeyCode::Esc => app.go_back(),
+        KeyCode::Up | KeyCode::Char('k') if app.schedule_selected > 0 => {
+            app.schedule_selected -= 1;
+        }
+        KeyCode::Down | KeyCode::Char('j')
+            if app.schedule_selected + 1 < app.schedule_anime.len() =>
+        {
+            app.schedule_selected += 1;
+        }
+        KeyCode::Left | KeyCode::Char('h') => {
+            let idx = days
+                .iter()
+                .position(|d| *d == app.schedule_day)
+                .unwrap_or(0);
+            app.schedule_day = days[(idx + days.len() - 1) % days.len()].to_string();
+            app.schedule_selected = 0;
+            app.schedule_loading = true;
+            let _ = terminal.draw(|f| ui::render(f, app));
+            fetch_schedule_day(app).await;
+        }
+        KeyCode::Right | KeyCode::Char('l') => {
+            let idx = days
+                .iter()
+                .position(|d| *d == app.schedule_day)
+                .unwrap_or(0);
+            app.schedule_day = days[(idx + 1) % days.len()].to_string();
+            app.schedule_selected = 0;
+            app.schedule_loading = true;
+            let _ = terminal.draw(|f| ui::render(f, app));
+            fetch_schedule_day(app).await;
+        }
+        KeyCode::Enter => {
+            if let Some(anime) = app.schedule_anime.get(app.schedule_selected).cloned() {
+                enter_anime_from_jikan(app, &anime, api, terminal).await;
+            }
+        }
+        _ => {}
+    }
+}
+
+async fn fetch_schedule_day(app: &mut App) {
+    let jikan = app.jikan.clone();
+    match jikan.get_schedule(&app.schedule_day, 1).await {
+        Ok(page) => {
+            app.schedule_anime = page.data;
+            app.schedule_selected = 0;
+        }
+        Err(e) => app.toast(format!("schedule fetch failed: {}", e), true),
+    }
+    app.schedule_loading = false;
+}
+
+async fn enter_anime_from_jikan(
+    app: &mut App,
+    jikan_anime: &crate::domain::jikan::JikanAnime,
+    api: &mut ApiClient,
+    terminal: &mut AppTerminal,
+) {
+    let title = jikan_anime.display_title().to_string();
+    let ep_count = jikan_anime.episodes.unwrap_or(0);
+
+    app.search_loading = true;
+    let _ = terminal.draw(|f| ui::render(f, app));
+
+    match api.search_anime(&title).await {
+        Ok(results) => {
+            if let Some(anime) = results
+                .iter()
+                .find(|r| {
+                    r.title.to_lowercase() == title.to_lowercase()
+                        || (r.episode_count == ep_count && ep_count > 0)
+                })
+                .cloned()
+                .or_else(|| results.into_iter().next())
+            {
+                app.selected_anime = Some(anime.clone());
+                app.episodes_loading = true;
+                app.jikan_anime = Some(jikan_anime.clone());
+                app.jikan_loading = false;
+                app.synopsis_scroll = 0;
+                app.navigate(Screen::AnimeDetail);
+                let _ = terminal.draw(|f| ui::render(f, app));
+                match api.episodes_list(&anime.id).await {
+                    Ok(eps) => {
+                        app.episodes = eps;
+                        app.episode_selected = 0;
+                    }
+                    Err(e) => app.toast(e, true),
+                }
+                app.episodes_loading = false;
+            } else {
+                app.toast("couldn't find that show on AllAnime", true);
+            }
+        }
+        Err(e) => app.toast(e, true),
+    }
+    app.search_loading = false;
 }
