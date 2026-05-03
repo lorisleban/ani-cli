@@ -161,7 +161,14 @@ fn render_update_popup(f: &mut Frame, stage: Rect, app: &App) {
         ),
         Span::styled("  dismiss", theme::fg(t.text_dim)),
     ]);
-    let text = vec![Line::raw(""), title, Line::raw(""), body, Line::raw(""), action];
+    let text = vec![
+        Line::raw(""),
+        title,
+        Line::raw(""),
+        body,
+        Line::raw(""),
+        action,
+    ];
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(theme::fg(t.border));

@@ -150,8 +150,7 @@ pub fn render_toasts<'a>(app: &'a App, width: u16) -> Vec<Line<'a>> {
             .saturating_sub(label.chars().count())
             .saturating_sub(8);
         let body = truncate(&toast.message, body_max);
-        let pad = (width as usize)
-            .saturating_sub(body.chars().count() + label.chars().count() + 6);
+        let pad = (width as usize).saturating_sub(body.chars().count() + label.chars().count() + 6);
 
         lines.push(Line::from(vec![
             Span::raw(" ".repeat(pad)),

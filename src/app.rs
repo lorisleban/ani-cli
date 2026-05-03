@@ -7,6 +7,7 @@ use crate::discord::{
 };
 use crate::domain::anime::AnimePresenceMetadata;
 use crate::player::{self, PlayerType};
+use crate::providers::jikan::JikanClient;
 use crate::theme::Theme;
 
 #[derive(Debug, Clone, Default)]
@@ -84,6 +85,7 @@ pub struct App {
     pub discord_presence: Option<DiscordPresence>,
 
     pub db: Database,
+    pub jikan: JikanClient,
 
     // Update status
     pub update_available: Option<crate::update::UpdateInfo>,
@@ -104,6 +106,7 @@ impl App {
         let db = Database::new().expect("Failed to initialize database");
         let history = db.get_history().unwrap_or_default();
         let continue_watching = db.get_continue_watching().unwrap_or_default();
+        let jikan = JikanClient::new(Database::new().expect("Failed to initialize Jikan database"));
 
         Self {
             screen: Screen::Home,
@@ -140,6 +143,7 @@ impl App {
             quality: "best".to_string(),
             discord_presence: options.discord_client_id.map(DiscordPresence::new),
             db,
+            jikan,
             update_available: None,
             update_check_in_progress: false,
             update_popup_visible: false,

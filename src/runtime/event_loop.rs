@@ -5,9 +5,9 @@ use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifier
 use super::terminal::AppTerminal;
 use crate::api::ApiClient;
 use crate::app::{App, Screen};
+use crate::ui;
 use crate::update::{open_release_notes, perform_update, UpdateOutcome};
 use chrono::{DateTime, Utc};
-use crate::ui;
 
 const SEARCH_DEBOUNCE_MS: u64 = 180;
 
@@ -281,7 +281,9 @@ fn start_update_check(
         return None;
     }
     app.update_check_in_progress = false;
-    Some(tokio::spawn(async { crate::update::check_for_update().await }))
+    Some(tokio::spawn(async {
+        crate::update::check_for_update().await
+    }))
 }
 
 fn apply_update_result(app: &mut App, result: Option<crate::update::UpdateInfo>) {
@@ -481,7 +483,7 @@ async fn play_selected(app: &mut App, api: &ApiClient, terminal: &mut AppTermina
     app.toast("fetching stream...", false);
     let _ = terminal.draw(|f| ui::render(f, app));
 
-    let metadata_client = api.clone();
+    let metadata_client = app.jikan.clone();
     let (stream_result, metadata_result) = tokio::join!(
         api.get_episode_url(&anime.id, &ep, &app.quality),
         metadata_client.fetch_presence_metadata(&anime.title, Some(anime.episode_count))

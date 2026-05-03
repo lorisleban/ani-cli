@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use rusqlite::{params, Connection, Result};
 
 use crate::domain::history::WatchEntry;
+use crate::domain::jikan::MalIdMapping;
 
 const USER_VERSION: i64 = 1;
 const STOP_REWIND_SECONDS: i64 = 30;
@@ -163,10 +164,17 @@ impl Database {
                 PRIMARY KEY(entity_type, entity_id)
             );
 
-            CREATE TABLE IF NOT EXISTS app_state (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL
-            );",
+ CREATE TABLE IF NOT EXISTS app_state (
+ key TEXT PRIMARY KEY,
+ value TEXT NOT NULL );
+
+ CREATE TABLE IF NOT EXISTS mal_id_mappings (
+ allanime_id TEXT PRIMARY KEY,
+ mal_id INTEGER NOT NULL,
+ confidence REAL NOT NULL DEFAULT 0.0,
+ confirmed INTEGER NOT NULL DEFAULT 0,
+ updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+ );",
         )?;
         self.backfill_local_data()?;
         self.conn
@@ -522,6 +530,83 @@ impl Database {
             params![entity_type, entity_id.to_string()],
         )?;
         Ok(())
+    }
+
+    // -- Jikan cache & MAL mapping methods --
+
+    const JK_SOURCE: &str = "jikan";
+
+    pub fn jikan_get_cached(&self, endpoint: &str) -> Option<String> {
+        let key = format!("{}:{}", Self::JK_SOURCE, endpoint);
+        self.conn
+            .query_row(
+                "SELECT payload_json FROM metadata_cache
+                 WHERE source = ?1 AND external_id = ?2
+                 AND (expires_at IS NULL OR expires_at > datetime('now'))",
+                params![Self::JK_SOURCE, key],
+                |row| row.get(0),
+            )
+            .ok()
+    }
+
+    pub fn jikan_set_cached(&self, endpoint: &str, payload: &str, ttl_hours: u32) {
+        let key = format!("{}:{}", Self::JK_SOURCE, endpoint);
+        let _ = self.conn.execute(
+            "INSERT INTO metadata_cache (source, external_id, payload_json, expires_at)
+             VALUES (?1, ?2, ?3, datetime('now', '+' || ?4 || ' hours'))
+             ON CONFLICT(source, external_id) DO UPDATE SET
+               payload_json = excluded.payload_json,
+               fetched_at = CURRENT_TIMESTAMP,
+               expires_at = excluded.expires_at",
+            params![Self::JK_SOURCE, key, payload, ttl_hours],
+        );
+    }
+
+    pub fn jikan_get_mal_id(&self, allanime_id: &str) -> Option<u32> {
+        self.conn
+            .query_row(
+                "SELECT mal_id FROM mal_id_mappings WHERE allanime_id = ?1",
+                params![allanime_id],
+                |row| row.get(0),
+            )
+            .ok()
+    }
+
+    pub fn jikan_set_mal_id(
+        &self,
+        allanime_id: &str,
+        mal_id: u32,
+        confidence: f64,
+        confirmed: bool,
+    ) {
+        let _ = self.conn.execute(
+            "INSERT INTO mal_id_mappings (allanime_id, mal_id, confidence, confirmed, updated_at)
+             VALUES (?1, ?2, ?3, ?4, CURRENT_TIMESTAMP)
+             ON CONFLICT(allanime_id) DO UPDATE SET
+               mal_id = excluded.mal_id,
+               confidence = excluded.confidence,
+               confirmed = excluded.confirmed,
+               updated_at = CURRENT_TIMESTAMP",
+            params![allanime_id, mal_id, confidence, confirmed],
+        );
+    }
+
+    pub fn jikan_get_mal_mapping(&self, allanime_id: &str) -> Option<MalIdMapping> {
+        self.conn
+            .query_row(
+                "SELECT allanime_id, mal_id, confidence, confirmed
+                 FROM mal_id_mappings WHERE allanime_id = ?1",
+                params![allanime_id],
+                |row| {
+                    Ok(MalIdMapping {
+                        allanime_id: row.get(0)?,
+                        mal_id: row.get(1)?,
+                        confidence: row.get(2)?,
+                        confirmed: row.get(3)?,
+                    })
+                },
+            )
+            .ok()
     }
 }
 

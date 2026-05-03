@@ -4,9 +4,9 @@ use std::process::Command;
 
 use chrono::{DateTime, Duration, Utc};
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, USER_AGENT};
+use self_update::{ArchiveKind, Extract};
 use semver::Version;
 use serde::Deserialize;
-use self_update::{ArchiveKind, Extract};
 
 const OWNER: &str = "lorisleban";
 const REPO: &str = "ani-cli";
@@ -73,11 +73,12 @@ pub async fn check_for_update() -> Result<Option<UpdateInfo>, String> {
 
 pub async fn perform_update() -> Result<UpdateOutcome, String> {
     match detect_install_source() {
-        InstallSource::Homebrew => run_command("brew", &["upgrade", "ani-cli"])
-            .map(|_| UpdateOutcome {
+        InstallSource::Homebrew => {
+            run_command("brew", &["upgrade", "ani-cli"]).map(|_| UpdateOutcome {
                 message: "updated via brew".to_string(),
                 restart_required: false,
-            }),
+            })
+        }
         InstallSource::Cargo => run_command(
             "cargo",
             &[
@@ -355,7 +356,9 @@ fn replace_binary(target: &Path, source: &Path) -> Result<bool, String> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mut perms = fs::metadata(&tmp_path).map_err(|e| e.to_string())?.permissions();
+        let mut perms = fs::metadata(&tmp_path)
+            .map_err(|e| e.to_string())?
+            .permissions();
         perms.set_mode(0o755);
         fs::set_permissions(&tmp_path, perms).map_err(|e| e.to_string())?;
     }
@@ -365,14 +368,8 @@ fn replace_binary(target: &Path, source: &Path) -> Result<bool, String> {
 
 fn replace_binary_windows(target: &Path, source: &Path) -> Result<(), String> {
     let pid = std::process::id();
-    let target = target
-        .to_str()
-        .ok_or("invalid target path")?
-        .to_string();
-    let source = source
-        .to_str()
-        .ok_or("invalid source path")?
-        .to_string();
+    let target = target.to_str().ok_or("invalid target path")?.to_string();
+    let source = source.to_str().ok_or("invalid source path")?.to_string();
     let mut script = std::env::temp_dir();
     script.push(format!("ani-cli-updater-{}.cmd", pid));
     let script_body = format!(
@@ -388,13 +385,16 @@ fn replace_binary_windows(target: &Path, source: &Path) -> Result<(), String> {
             "start \"\" %target%\r\n",
             "del \"%~f0\"\r\n"
         ),
-        pid,
-        target,
-        source
+        pid, target, source
     );
     fs::write(&script, script_body).map_err(|e| e.to_string())?;
     Command::new("cmd")
-        .args(["/C", "start", "", script.to_str().ok_or("invalid script path")?])
+        .args([
+            "/C",
+            "start",
+            "",
+            script.to_str().ok_or("invalid script path")?,
+        ])
         .spawn()
         .map_err(|e| e.to_string())?;
     Ok(())
