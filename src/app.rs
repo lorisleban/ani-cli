@@ -6,6 +6,7 @@ use crate::discord::{
     session_started_at_unix, DiscordPresence, PlayerActivityMonitor, PresencePlayback,
 };
 use crate::domain::anime::AnimePresenceMetadata;
+use crate::domain::jikan::JikanAnime;
 use crate::player::{self, PlayerType};
 use crate::providers::jikan::JikanClient;
 use crate::theme::Theme;
@@ -55,6 +56,9 @@ pub struct App {
     pub episodes: Vec<String>,
     pub episode_selected: usize,
     pub episodes_loading: bool,
+    pub jikan_anime: Option<JikanAnime>,
+    pub jikan_loading: bool,
+    pub synopsis_scroll: usize,
 
     // Now playing
     pub current_episode: Option<String>,
@@ -124,6 +128,9 @@ impl App {
             episodes: Vec::new(),
             episode_selected: 0,
             episodes_loading: false,
+            jikan_anime: None,
+            jikan_loading: false,
+            synopsis_scroll: 0,
             current_episode: None,
             playing_title: None,
             episode_url: None,

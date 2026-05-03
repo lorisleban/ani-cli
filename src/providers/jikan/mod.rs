@@ -335,6 +335,35 @@ impl JikanClient {
 
         Ok(Some(mapping))
     }
+
+    pub async fn fetch_jikan_anime(
+        &self,
+        title: &str,
+        episode_count_hint: Option<u32>,
+    ) -> Result<Option<JikanAnime>, String> {
+        let results = self.search_anime(title, 5).await?;
+        let mut scored: Vec<(f64, &JikanAnime)> = results
+            .data
+            .iter()
+            .map(|a| (match_confidence(title, a, episode_count_hint), a))
+            .filter(|(score, _)| *score >= 0.3)
+            .collect();
+        scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+
+        let (confidence, best) = match scored.first() {
+            Some(pair) => *pair,
+            None => return Ok(None),
+        };
+
+        if confidence >= 0.6 {
+            match self.get_anime_full(best.mal_id).await {
+                Ok(full) => Ok(Some(full)),
+                Err(_) => Ok(Some(best.clone())),
+            }
+        } else {
+            Ok(Some(best.clone()))
+        }
+    }
 }
 
 fn match_confidence(title: &str, anime: &JikanAnime, episode_count_hint: Option<u32>) -> f64 {

@@ -1,3 +1,5 @@
+mod metadata_panel;
+
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
@@ -15,6 +17,7 @@ pub fn render(f: &mut Frame, app: &App) {
     let hints = [
         ("⏎", "play"),
         ("hjkl", "move"),
+        ("J/K", "scroll info"),
         ("d", "sub/dub"),
         ("U", "update"),
         ("R", "notes"),
@@ -31,22 +34,49 @@ pub fn render(f: &mut Frame, app: &App) {
         .unwrap_or_else(|| "detail".to_string());
     let stage = chrome::shell(f, app, &title, hints);
 
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .margin(1)
-        .constraints([
-            Constraint::Length(4), // header
-            Constraint::Length(1), // dotted divider
-            Constraint::Min(3),    // grid
-        ])
-        .split(stage);
+    let has_jikan = app.jikan_anime.is_some() || app.jikan_loading;
+    let meta_width = if has_jikan { 38 } else { 0 };
 
-    render_header(f, chunks[0], app);
-    f.render_widget(
-        Paragraph::new(chrome::dotted(chunks[1].width as usize, t)),
-        chunks[1],
-    );
-    render_grid(f, chunks[2], app);
+    if meta_width > 0 {
+        let columns = Layout::default()
+            .direction(Direction::Horizontal)
+            .margin(1)
+            .constraints([
+                Constraint::Length(meta_width),
+                Constraint::Length(1),
+                Constraint::Min(20),
+            ])
+            .split(stage);
+
+        metadata_panel::render(f, columns[0], app);
+
+        let divider_x = columns[1].x;
+        let divider_top = columns[1].y;
+        for y in 0..columns[1].height {
+            let dot = Span::styled("│", theme::dim(t.text_subtle));
+            let area = Rect::new(divider_x, divider_top + y, 1, 1);
+            f.render_widget(Paragraph::new(Line::from(dot)), area);
+        }
+
+        render_episode_area(f, columns[2], app);
+    } else {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .margin(1)
+            .constraints([
+                Constraint::Length(4),
+                Constraint::Length(1),
+                Constraint::Min(3),
+            ])
+            .split(stage);
+
+        render_header(f, chunks[0], app);
+        f.render_widget(
+            Paragraph::new(chrome::dotted(chunks[1].width as usize, t)),
+            chunks[1],
+        );
+        render_episode_area(f, chunks[2], app);
+    }
 }
 
 fn render_header(f: &mut Frame, area: Rect, app: &App) {
@@ -67,21 +97,21 @@ fn render_header(f: &mut Frame, area: Rect, app: &App) {
     let lines = vec![
         Line::from(vec![
             Span::styled(SPARKLE, theme::fg(t.gold)),
-            Span::raw("  "),
+            Span::raw(" "),
             Span::styled(
                 anime.title.clone(),
                 Style::default().fg(t.text).add_modifier(Modifier::BOLD),
             ),
         ]),
         Line::from(vec![
-            Span::raw("    "),
+            Span::raw(" "),
             Span::styled(
                 format!("{} episodes", anime.episode_count),
                 theme::fg(t.text_dim),
             ),
-            Span::styled("  ·  ", theme::dim(t.text_subtle)),
+            Span::styled(" · ", theme::dim(t.text_subtle)),
             Span::styled(format!("{} watched", watched_count), theme::fg(t.sage)),
-            Span::styled("  ·  ", theme::dim(t.text_subtle)),
+            Span::styled(" · ", theme::dim(t.text_subtle)),
             Span::styled(
                 match app.mode {
                     crate::api::Mode::Sub => "sub",
@@ -92,33 +122,21 @@ fn render_header(f: &mut Frame, area: Rect, app: &App) {
         ]),
         Line::raw(""),
         Line::from(vec![
-            Span::raw("    "),
+            Span::raw(" "),
             Span::styled(theme::progress_bar(ratio, 36), theme::fg(t.gold)),
-            Span::raw("  "),
+            Span::raw(" "),
             Span::styled(format!("{:.0}%", ratio * 100.0), theme::fg(t.text_dim)),
         ]),
     ];
     f.render_widget(Paragraph::new(lines), area);
 }
 
-fn watched_eps_for(app: &App) -> Vec<String> {
-    let id = match app.selected_anime.as_ref() {
-        Some(a) => a.id.clone(),
-        None => return vec![],
-    };
-    app.history
-        .iter()
-        .filter(|h| h.anime_id == id)
-        .map(|h| h.episode.clone())
-        .collect()
-}
-
-fn render_grid(f: &mut Frame, area: Rect, app: &App) {
+fn render_episode_area(f: &mut Frame, area: Rect, app: &App) {
     let t = &app.theme;
 
     if app.episodes_loading {
         let line = Line::from(vec![
-            Span::raw("    "),
+            Span::raw(" "),
             Span::styled(theme::spinner_frame(app.spinner_tick), theme::fg(t.gold)),
             Span::raw(" "),
             Span::styled("gathering episodes…", theme::italic(t.text_dim)),
@@ -129,7 +147,7 @@ fn render_grid(f: &mut Frame, area: Rect, app: &App) {
     if app.episodes.is_empty() {
         f.render_widget(
             Paragraph::new(Line::from(Span::styled(
-                "    nothing here yet",
+                " nothing here yet",
                 theme::italic(t.text_dim),
             ))),
             area,
@@ -137,14 +155,13 @@ fn render_grid(f: &mut Frame, area: Rect, app: &App) {
         return;
     }
 
-    // For very long shows fall back to a list
     if app.episodes.len() > 200 {
         render_long_list(f, area, app);
         return;
     }
 
     let watched = watched_eps_for(app);
-    let cell_w: usize = 6; // " 12 " plus gutter
+    let cell_w: usize = 6;
     let inner_w = (area.width as usize).saturating_sub(4);
     let cols = (inner_w / cell_w).max(1);
 
@@ -157,8 +174,8 @@ fn render_grid(f: &mut Frame, area: Rect, app: &App) {
     let end_row = (start_row + visible_rows).min(rows);
 
     for row in start_row..end_row {
-        let mut cells: Vec<Span> = vec![Span::raw("  ")];
-        let mut floor: Vec<Span> = vec![Span::raw("  ")];
+        let mut cells: Vec<Span> = vec![Span::raw(" ")];
+        let mut floor: Vec<Span> = vec![Span::raw(" ")];
         for col in 0..cols {
             let i = row * cols + col;
             if i >= total {
@@ -180,7 +197,6 @@ fn render_grid(f: &mut Frame, area: Rect, app: &App) {
             cells.push(Span::styled(label, style));
             cells.push(Span::raw(" "));
 
-            // floor row: tiny mark under each cell
             let mark = if is_sel {
                 "▔▔▔▔▔"
             } else if is_watched {
@@ -204,7 +220,6 @@ fn render_grid(f: &mut Frame, area: Rect, app: &App) {
 }
 
 fn short_ep(s: &str) -> String {
-    // Prefer integer-looking ep names, e.g. "12.5" -> "12.5", "12" -> "12"
     s.to_string()
 }
 
@@ -244,10 +259,22 @@ fn render_long_list(f: &mut Frame, area: Rect, app: &App) {
                 bar,
                 Span::raw(" "),
                 icon,
-                Span::raw("  "),
+                Span::raw(" "),
                 Span::styled(format!("Episode {}", ep), title_style),
             ])
         })
         .collect();
     f.render_widget(Paragraph::new(lines), area);
+}
+
+fn watched_eps_for(app: &App) -> Vec<String> {
+    let id = match app.selected_anime.as_ref() {
+        Some(a) => a.id.clone(),
+        None => return vec![],
+    };
+    app.history
+        .iter()
+        .filter(|h| h.anime_id == id)
+        .map(|h| h.episode.clone())
+        .collect()
 }

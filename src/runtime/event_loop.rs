@@ -343,12 +343,21 @@ async fn resume_entry(
     match api.search_anime(&entry.title).await {
         Ok(results) => {
             if let Some(anime) = results.into_iter().find(|r| r.id == entry.anime_id) {
-                app.selected_anime = Some(anime);
+                app.selected_anime = Some(anime.clone());
                 app.episodes_loading = true;
+                app.jikan_anime = None;
+                app.jikan_loading = true;
+                app.synopsis_scroll = 0;
                 app.navigate(Screen::AnimeDetail);
                 let _ = terminal.draw(|f| ui::render(f, app));
 
-                if let Ok(episodes) = api.episodes_list(&entry.anime_id).await {
+                let jikan_client = app.jikan.clone();
+                let (ep_result, jikan_result) = tokio::join!(
+                    api.episodes_list(&entry.anime_id),
+                    jikan_client.fetch_jikan_anime(&anime.title, Some(anime.episode_count))
+                );
+
+                if let Ok(episodes) = ep_result {
                     app.episodes = episodes;
                     let current_ep: f64 = entry.episode.parse().unwrap_or(0.0);
                     app.episode_selected = app
@@ -358,6 +367,8 @@ async fn resume_entry(
                         .unwrap_or(0);
                 }
                 app.episodes_loading = false;
+                app.jikan_anime = jikan_result.ok().flatten();
+                app.jikan_loading = false;
             } else {
                 app.toast("couldn't find that show anymore", true);
             }
@@ -389,9 +400,17 @@ async fn on_search(app: &mut App, key: KeyEvent, api: &mut ApiClient, terminal: 
             if let Some(result) = app.search_results.get(app.search_selected).cloned() {
                 app.selected_anime = Some(result.clone());
                 app.episodes_loading = true;
+                app.jikan_anime = None;
+                app.jikan_loading = true;
+                app.synopsis_scroll = 0;
                 app.navigate(Screen::AnimeDetail);
                 let _ = terminal.draw(|f| ui::render(f, app));
-                match api.episodes_list(&result.id).await {
+                let jikan_client = app.jikan.clone();
+                let (ep_result, jikan_result) = tokio::join!(
+                    api.episodes_list(&result.id),
+                    jikan_client.fetch_jikan_anime(&result.title, Some(result.episode_count))
+                );
+                match ep_result {
                     Ok(eps) => {
                         app.episodes = eps;
                         app.episode_selected = 0;
@@ -399,6 +418,8 @@ async fn on_search(app: &mut App, key: KeyEvent, api: &mut ApiClient, terminal: 
                     Err(e) => app.toast(e, true),
                 }
                 app.episodes_loading = false;
+                app.jikan_anime = jikan_result.ok().flatten();
+                app.jikan_loading = false;
             }
         }
         KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -442,6 +463,12 @@ async fn on_detail(app: &mut App, key: KeyEvent, api: &mut ApiClient, terminal: 
         }
         KeyCode::Right | KeyCode::Char('l') if app.episode_selected + 1 < app.episodes.len() => {
             app.episode_selected += 1;
+        }
+        KeyCode::Char('K') => {
+            app.synopsis_scroll = app.synopsis_scroll.saturating_sub(1);
+        }
+        KeyCode::Char('J') => {
+            app.synopsis_scroll = app.synopsis_scroll.saturating_add(1);
         }
         KeyCode::Char('d') => {
             app.toggle_mode();

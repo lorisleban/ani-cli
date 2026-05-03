@@ -42,6 +42,11 @@ pub trait JikanCatalog {
         title: &str,
         episode_count_hint: Option<u32>,
     ) -> Result<Option<MalIdMapping>, String>;
+    async fn fetch_jikan_anime(
+        &self,
+        title: &str,
+        episode_count_hint: Option<u32>,
+    ) -> Result<Option<JikanAnime>, String>;
 }
 
 impl JikanCatalog for JikanClient {
@@ -120,5 +125,13 @@ impl JikanCatalog for JikanClient {
         episode_count_hint: Option<u32>,
     ) -> Result<Option<MalIdMapping>, String> {
         JikanClient::resolve_mal_id(self, allanime_id, title, episode_count_hint).await
+    }
+
+    async fn fetch_jikan_anime(
+        &self,
+        title: &str,
+        episode_count_hint: Option<u32>,
+    ) -> Result<Option<JikanAnime>, String> {
+        JikanClient::fetch_jikan_anime(self, title, episode_count_hint).await
     }
 }
