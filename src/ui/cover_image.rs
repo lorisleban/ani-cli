@@ -18,10 +18,15 @@ pub fn create_picker() -> Option<Picker> {
 
 /// Fetch an image from a URL and create a StatefulProtocol using the picker.
 pub async fn fetch_cover(url: &str, picker: &Picker) -> Option<CoverArt> {
-    let bytes = reqwest::get(url).await.ok()?.bytes().await.ok()?;
-    let img = image::load_from_memory(&bytes).ok()?;
+    let img = fetch_image_data(url).await?;
     let protocol = picker.new_resize_protocol(img);
     Some(CoverArt {
         protocol: RefCell::new(protocol),
     })
+}
+
+/// Fetch an image data from a URL.
+pub async fn fetch_image_data(url: &str) -> Option<image::DynamicImage> {
+    let bytes = reqwest::get(url).await.ok()?.bytes().await.ok()?;
+    image::load_from_memory(&bytes).ok()
 }

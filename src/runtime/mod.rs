@@ -1,5 +1,7 @@
 mod event_loop;
+pub mod msg;
 mod terminal;
+pub mod update;
 
 use crate::api::ApiClient;
 use crate::app::{App, AppOptions};

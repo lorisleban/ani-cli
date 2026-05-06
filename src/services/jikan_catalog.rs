@@ -36,7 +36,10 @@ pub trait JikanCatalog {
         &self,
         mal_id: u32,
     ) -> Result<JikanResponse<Vec<JikanRecommendation>>, String>;
-    async fn get_characters(&self, mal_id: u32) -> Result<JikanResponse<Vec<JikanCharacter>>, String>;
+    async fn get_characters(
+        &self,
+        mal_id: u32,
+    ) -> Result<JikanResponse<Vec<JikanCharacter>>, String>;
     async fn get_season_list(&self) -> Result<Vec<JikanSeasonInfo>, String>;
     async fn fetch_presence_metadata(
         &self,
@@ -114,7 +117,10 @@ impl JikanCatalog for JikanClient {
     ) -> Result<JikanResponse<Vec<JikanRecommendation>>, String> {
         JikanClient::get_recommendations(self, mal_id).await
     }
-    async fn get_characters(&self, mal_id: u32) -> Result<JikanResponse<Vec<JikanCharacter>>, String> {
+    async fn get_characters(
+        &self,
+        mal_id: u32,
+    ) -> Result<JikanResponse<Vec<JikanCharacter>>, String> {
         JikanClient::get_characters(self, mal_id).await
     }
 

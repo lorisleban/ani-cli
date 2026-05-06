@@ -98,6 +98,7 @@ pub struct App {
     pub spinner_tick: usize,
     pub splash_tick: usize,
     pub loading: bool,
+    pub target_episode: Option<String>,
 
     // Vim-style key buffer (e.g. `g`+`h`)
     pub key_seq: Option<(char, Instant)>,
@@ -171,6 +172,9 @@ pub struct App {
     pub update_in_progress: bool,
     pub update_check_manual: bool,
     pub update_notes_requested: bool,
+
+    // Concurrency control
+    pub current_session_id: u64,
 }
 
 impl App {
@@ -182,7 +186,10 @@ impl App {
         Self::with_options_and_picker(options, None)
     }
 
-    pub fn with_options_and_picker(options: AppOptions, picker: Option<ratatui_image::picker::Picker>) -> Self {
+    pub fn with_options_and_picker(
+        options: AppOptions,
+        picker: Option<ratatui_image::picker::Picker>,
+    ) -> Self {
         let db = Database::new().expect("Failed to initialize database");
         let history = db.get_history().unwrap_or_default();
         let continue_watching = db.get_continue_watching().unwrap_or_default();
@@ -226,6 +233,7 @@ impl App {
             spinner_tick: 0,
             splash_tick: 0,
             loading: false,
+            target_episode: None,
             key_seq: None,
             player_type: options.player_type.unwrap_or_else(PlayerType::detect),
             mode: options.mode.unwrap_or(Mode::Sub),
@@ -280,6 +288,7 @@ impl App {
             update_in_progress: false,
             update_check_manual: false,
             update_notes_requested: false,
+            current_session_id: 0,
         }
     }
 

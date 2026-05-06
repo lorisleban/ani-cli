@@ -39,7 +39,9 @@ pub fn render(f: &mut Frame, app: &App) {
 
 fn render_dashboard(f: &mut Frame, area: Rect, app: &App) {
     let t = &app.theme;
-    let sel = app.home_selected.min(app.continue_watching.len().saturating_sub(1));
+    let sel = app
+        .home_selected
+        .min(app.continue_watching.len().saturating_sub(1));
 
     // Top strip for airing today (Hero Section)
     let rows = Layout::default()
@@ -173,7 +175,9 @@ fn render_queue_pane(f: &mut Frame, area: Rect, app: &App, sel: usize) {
 // ── Detail pane (right) ───────────────────────────────────────────────────
 
 fn render_detail_pane(f: &mut Frame, area: Rect, app: &App, sel: usize) {
-    if app.continue_watching.is_empty() { return; }
+    if app.continue_watching.is_empty() {
+        return;
+    }
     let t = &app.theme;
     let entry = &app.continue_watching[sel];
     let inner = inset(area, 3, 1);
@@ -182,10 +186,11 @@ fn render_detail_pane(f: &mut Frame, area: Rect, app: &App, sel: usize) {
     let cur: f64 = entry.episode.parse().unwrap_or(0.0);
     let next_ep = (cur + 1.0) as u32;
     let ratio = if total > 0 { cur / total as f64 } else { 0.0 };
-    
+
     // Find history entry for metadata enrichment
     let history_entry = app.history.iter().find(|h| h.anime_id == entry.anime_id);
-    let last_at = history_entry.map(|h| {
+    let last_at = history_entry
+        .map(|h| {
             if h.watched_at.len() >= 10 {
                 h.watched_at[..10].to_string()
             } else {
@@ -199,7 +204,7 @@ fn render_detail_pane(f: &mut Frame, area: Rect, app: &App, sel: usize) {
         .constraints([
             Constraint::Length(10), // main info
             Constraint::Length(1),  // dotted divider
-            Constraint::Min(5),    // Overview stats
+            Constraint::Min(5),     // Overview stats
             Constraint::Length(1),  // divider
             Constraint::Length(5),  // Mochi + recent strip
         ])
@@ -210,7 +215,10 @@ fn render_detail_pane(f: &mut Frame, area: Rect, app: &App, sel: usize) {
         Line::from(vec![
             Span::styled(SPARKLE, theme::fg(t.gold)),
             Span::raw(" "),
-            Span::styled("CONTINUE WATCHING", Style::default().fg(t.moon).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "CONTINUE WATCHING",
+                Style::default().fg(t.moon).add_modifier(Modifier::BOLD),
+            ),
         ]),
         Line::raw(""),
         Line::from(Span::styled(
@@ -218,20 +226,43 @@ fn render_detail_pane(f: &mut Frame, area: Rect, app: &App, sel: usize) {
             Style::default().fg(t.text).add_modifier(Modifier::BOLD),
         )),
         Line::from(vec![
-            Span::styled(format!("Episode {}", next_ep), Style::default().fg(t.gold).add_modifier(Modifier::BOLD)),
-            if total > 0 { Span::styled(format!(" / {}", total), theme::dim(t.text_subtle)) } else { Span::raw("") },
-            if !last_at.is_empty() { Span::styled(format!("  ·  last seen {}", last_at), theme::dim(t.text_subtle)) } else { Span::raw("") },
+            Span::styled(
+                format!("Episode {}", next_ep),
+                Style::default().fg(t.gold).add_modifier(Modifier::BOLD),
+            ),
+            if total > 0 {
+                Span::styled(format!(" / {}", total), theme::dim(t.text_subtle))
+            } else {
+                Span::raw("")
+            },
+            if !last_at.is_empty() {
+                Span::styled(
+                    format!("  ·  last seen {}", last_at),
+                    theme::dim(t.text_subtle),
+                )
+            } else {
+                Span::raw("")
+            },
         ]),
         Line::raw(""),
-        Line::from(Span::styled(theme::progress_bar(ratio, (pane[0].width as usize).saturating_sub(4)), theme::fg(t.gold))),
+        Line::from(Span::styled(
+            theme::progress_bar(ratio, (pane[0].width as usize).saturating_sub(4)),
+            theme::fg(t.gold),
+        )),
         Line::from(vec![
-            Span::styled(format!("{:.1}% complete", ratio * 100.0), theme::dim(t.text_subtle)),
+            Span::styled(
+                format!("{:.1}% complete", ratio * 100.0),
+                theme::dim(t.text_subtle),
+            ),
             Span::styled("  ·  ", theme::dim(t.text_subtle)),
             Span::styled(format!("{} watched", entry.episode), theme::fg(t.sage)),
         ]),
     ];
     f.render_widget(Paragraph::new(header), pane[0]);
-    f.render_widget(Paragraph::new(chrome::dotted(inner.width as usize, t)), pane[1]);
+    f.render_widget(
+        Paragraph::new(chrome::dotted(inner.width as usize, t)),
+        pane[1],
+    );
 
     let focused = app.home_focus == HomeFocus::Trending;
     let mut trending = vec![
@@ -239,7 +270,12 @@ fn render_detail_pane(f: &mut Frame, area: Rect, app: &App, sel: usize) {
             Span::styled(if focused { "▶ " } else { "" }, theme::fg(t.gold)),
             Span::styled(SPARKLE, theme::fg(t.gold)),
             Span::raw(" "),
-            Span::styled("TRENDING NOW", Style::default().fg(if focused { t.gold } else { t.moon }).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "TRENDING NOW",
+                Style::default()
+                    .fg(if focused { t.gold } else { t.moon })
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("  ·  Global Hits", theme::dim(t.text_subtle)),
         ]),
         Line::raw(""),
@@ -248,43 +284,67 @@ fn render_detail_pane(f: &mut Frame, area: Rect, app: &App, sel: usize) {
     if app.top_loading {
         trending.push(Line::from(vec![
             Span::raw("  "),
-            Span::styled(theme::spinner_frame(app.spinner_tick).to_string(), theme::fg(t.gold)),
+            Span::styled(
+                theme::spinner_frame(app.spinner_tick).to_string(),
+                theme::fg(t.gold),
+            ),
             Span::raw("  fetching global trends…"),
         ]));
     } else if app.top_anime.is_empty() {
-        trending.push(Line::from(Span::styled("  trends currently unavailable", theme::italic(t.text_dim))));
+        trending.push(Line::from(Span::styled(
+            "  trends currently unavailable",
+            theme::italic(t.text_dim),
+        )));
     } else {
         // Show top 5 airing shows
         for (i, anime) in app.top_anime.iter().take(5).enumerate() {
             let rank = i + 1;
             let score = anime.score.unwrap_or(0.0);
             let is_sel = focused && i == app.top_selected;
-            
+
             let mut spans = vec![
-                Span::styled(format!(" #{} ", rank), Style::default().fg(t.bg).bg(t.moon).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    format!(" #{} ", rank),
+                    Style::default()
+                        .fg(t.bg)
+                        .bg(t.moon)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::raw(" "),
             ];
-            
+
             if is_sel {
                 spans.push(Span::styled(
-                    theme::truncate(anime.display_title(), (pane[2].width as usize).saturating_sub(15)),
-                    Style::default().fg(t.bg).bg(t.gold).add_modifier(Modifier::BOLD)
+                    theme::truncate(
+                        anime.display_title(),
+                        (pane[2].width as usize).saturating_sub(15),
+                    ),
+                    Style::default()
+                        .fg(t.bg)
+                        .bg(t.gold)
+                        .add_modifier(Modifier::BOLD),
                 ));
             } else {
                 spans.push(Span::styled(
-                    theme::truncate(anime.display_title(), (pane[2].width as usize).saturating_sub(15)),
-                    theme::fg(t.text)
+                    theme::truncate(
+                        anime.display_title(),
+                        (pane[2].width as usize).saturating_sub(15),
+                    ),
+                    theme::fg(t.text),
                 ));
             }
-            
+
             spans.push(Span::styled(format!("  ★ {:.2}", score), theme::fg(t.gold)));
-            
+
             trending.push(Line::from(spans));
             trending.push(Line::raw(""));
         }
     }
     f.render_widget(Paragraph::new(trending), pane[2]);
-    f.render_widget(Paragraph::new(chrome::dotted(inner.width as usize, t)), pane[3]);
+    f.render_widget(
+        Paragraph::new(chrome::dotted(inner.width as usize, t)),
+        pane[3],
+    );
 
     // 3. Bottom Strip
     render_mochi_recent(f, pane[4], app, sel, t);
@@ -300,10 +360,19 @@ fn render_airing_strip(f: &mut Frame, area: Rect, app: &App) {
     let header_color = if focused { t.gold } else { t.moon };
     let mut header_spans = vec![
         Span::styled(
-            if focused { "▶ AIRING TODAY" } else { "  AIRING TODAY" },
-            Style::default().fg(header_color).add_modifier(Modifier::BOLD),
+            if focused {
+                "▶ AIRING TODAY"
+            } else {
+                "  AIRING TODAY"
+            },
+            Style::default()
+                .fg(header_color)
+                .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(format!("  {} shows", app.airing_today.len()), theme::dim(t.text_subtle)),
+        Span::styled(
+            format!("  {} shows", app.airing_today.len()),
+            theme::dim(t.text_subtle),
+        ),
         Span::raw("  ·  "),
         Span::styled(clock, theme::fg(t.gold)),
     ];
@@ -315,9 +384,15 @@ fn render_airing_strip(f: &mut Frame, area: Rect, app: &App) {
     if app.airing_today.is_empty() && !app.airing_today_loading {
         let empty = Line::from(vec![
             Span::raw("  "),
-            Span::styled("no schedule data yet", theme::italic(t.text_dim))
+            Span::styled("no schedule data yet", theme::italic(t.text_dim)),
         ]);
-        f.render_widget(Paragraph::new(empty), Rect { y: inner.y + 2, ..inner });
+        f.render_widget(
+            Paragraph::new(empty),
+            Rect {
+                y: inner.y + 2,
+                ..inner
+            },
+        );
         return;
     }
 
@@ -330,32 +405,32 @@ fn render_airing_strip(f: &mut Frame, area: Rect, app: &App) {
     let mut cards: Vec<Span> = vec![Span::raw("  ")];
     for (i, anime) in app.airing_today.iter().enumerate().take(end).skip(start) {
         let is_sel = app.home_focus == HomeFocus::Airing && i == app.home_airing_selected;
-        
+
         let time = anime.broadcast.time.as_deref().unwrap_or("??:??");
         let title = theme::truncate(anime.display_title(), card_w - 10);
-        
+
         if is_sel {
             cards.push(Span::styled(
                 format!(" {} ", time),
-                Style::default().fg(t.bg).bg(t.gold).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(t.bg)
+                    .bg(t.gold)
+                    .add_modifier(Modifier::BOLD),
             ));
             cards.push(Span::styled(
                 format!(" {}  ", title),
-                Style::default().fg(t.text).bg(t.text_subtle).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(t.text)
+                    .bg(t.text_subtle)
+                    .add_modifier(Modifier::BOLD),
             ));
         } else {
-            cards.push(Span::styled(
-                format!(" {} ", time),
-                theme::fg(t.gold)
-            ));
-            cards.push(Span::styled(
-                format!(" {}  ", title),
-                theme::fg(t.text_dim)
-            ));
+            cards.push(Span::styled(format!(" {} ", time), theme::fg(t.gold)));
+            cards.push(Span::styled(format!(" {}  ", title), theme::fg(t.text_dim)));
         }
         cards.push(Span::raw(" "));
     }
-    
+
     let carousel_area = Rect {
         y: inner.y + 2,
         height: 1,
@@ -365,12 +440,23 @@ fn render_airing_strip(f: &mut Frame, area: Rect, app: &App) {
 
     // Navigation hints if scrolling is possible
     if app.airing_today.len() > max_cards {
-        let dots = if start + max_cards < app.airing_today.len() { "→" } else { " " };
+        let dots = if start + max_cards < app.airing_today.len() {
+            "→"
+        } else {
+            " "
+        };
         let prev = if start > 0 { "←" } else { " " };
-        let nav = Line::from(vec![
-            Span::styled(format!("  {} scrolling carousel {}", prev, dots), theme::dim(t.text_subtle))
-        ]);
-        f.render_widget(Paragraph::new(nav), Rect { y: inner.y + 3, ..inner });
+        let nav = Line::from(vec![Span::styled(
+            format!("  {} scrolling carousel {}", prev, dots),
+            theme::dim(t.text_subtle),
+        )]);
+        f.render_widget(
+            Paragraph::new(nav),
+            Rect {
+                y: inner.y + 3,
+                ..inner
+            },
+        );
     }
 }
 

@@ -48,6 +48,7 @@ enum PresenceCommand {
     Shutdown,
 }
 
+#[derive(Clone)]
 pub struct DiscordPresence {
     sender: Sender<PresenceCommand>,
     next_token: Arc<AtomicU64>,

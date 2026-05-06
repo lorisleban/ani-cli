@@ -5,6 +5,7 @@ pub mod genre;
 pub mod help;
 pub mod history;
 pub mod home;
+pub mod layout;
 pub mod playing;
 pub mod recommendations;
 pub mod schedule;

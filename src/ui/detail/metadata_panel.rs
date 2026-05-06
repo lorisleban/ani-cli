@@ -3,17 +3,8 @@ use ratatui::{
     text::{Line, Span},
 };
 
-
 use crate::domain::jikan::JikanAnime;
 use crate::theme::{self};
-
-
-
-
-
-
-
-
 
 pub fn append_info_block(
     lines: &mut Vec<Line<'static>>,
@@ -74,10 +65,6 @@ pub fn append_info_block(
         }
     }
 }
-
-
-
-
 
 pub fn append_relations_block(
     lines: &mut Vec<Line<'static>>,
@@ -196,8 +183,6 @@ fn info_row(label: &str, value: &str, t: &theme::Theme, max_w: usize) -> Line<'s
         Span::styled(val, theme::fg(t.text)),
     ])
 }
-
-
 
 fn capitalize_first(s: &str) -> String {
     let mut chars = s.chars();
