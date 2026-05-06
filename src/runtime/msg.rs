@@ -50,6 +50,7 @@ pub enum Msg {
     ToggleUpdatePopup(bool),
     TriggerUpdate,
     UpdateStatus(Result<crate::update::UpdateOutcome, String>),
+    UpdateCheckResult(Result<Option<crate::update::UpdateInfo>, String>),
     Batch(Vec<Msg>),
 }
 
@@ -68,5 +69,6 @@ pub enum Cmd {
     LaunchPlayer(WatchEntry),
     ExecutePlayer(Box<PlaybackData>),
     PerformUpdate,
+    CheckUpdate,
     Batch(Vec<Cmd>),
 }

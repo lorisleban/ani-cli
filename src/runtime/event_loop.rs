@@ -26,7 +26,11 @@ pub async fn run_app(
     let jikan_client = app.jikan.clone();
 
     // Initial fetch
-    let _ = tx.send(Msg::Navigate(Screen::Home)).await;
+    let mut initial_cmds = vec![Msg::Navigate(Screen::Home)];
+    if app.update_check_in_progress {
+        initial_cmds.push(Msg::Toast("checking for updates...".to_string(), false));
+    }
+    let _ = tx.send(Msg::Batch(initial_cmds)).await;
 
     loop {
         let size = terminal.size().unwrap_or(ratatui::layout::Size {
@@ -43,7 +47,11 @@ pub async fn run_app(
                 let _ = tx.send(Msg::Tick).await;
             }
             Some(msg) = rx.recv() => {
-                let cmds = update::update(app, msg, cols);
+                let mut cmds = update::update(app, msg, cols);
+                if app.update_check_in_progress && !app.update_requested {
+                    app.update_requested = true;
+                    cmds.push(Cmd::CheckUpdate);
+                }
                 for cmd in cmds {
                     handle_command(cmd, tx.clone(), &api, &jikan_client, &quality);
                 }
@@ -108,7 +116,10 @@ fn handle_global(app: &App, key: KeyEvent) -> Option<Msg> {
                     Msg::TriggerUpdate,
                 ]))
             } else {
-                Some(Msg::Toast("checking for updates...".to_string(), false))
+                Some(Msg::Batch(vec![
+                    Msg::Toast("checking for updates...".to_string(), false),
+                    Msg::Key(key), // We'll let the update state handle triggering the cmd via Msg::Key
+                ]))
             }
         }
         KeyCode::Esc if app.update_popup_visible => Some(Msg::ToggleUpdatePopup(false)),
@@ -341,6 +352,13 @@ fn handle_command(
             tokio::spawn(async move {
                 let res = perform_update().await;
                 let _ = tx.send(Msg::UpdateStatus(res)).await;
+            });
+        }
+        Cmd::CheckUpdate => {
+            let tx = tx.clone();
+            tokio::spawn(async move {
+                let res = crate::update::check_for_update().await;
+                let _ = tx.send(Msg::UpdateCheckResult(res)).await;
             });
         }
     }

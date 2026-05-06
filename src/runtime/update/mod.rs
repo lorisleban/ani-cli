@@ -57,6 +57,15 @@ pub fn update(app: &mut App, msg: Msg, cols: usize) -> Vec<Cmd> {
                 }
             }
 
+            if key.code == crossterm::event::KeyCode::Char('U') {
+                if !app.update_in_progress && app.update_available.is_none() {
+                    app.update_check_in_progress = true;
+                    app.update_check_manual = true;
+                    app.update_requested = false;
+                }
+                return vec![];
+            }
+
             match app.screen {
                 Screen::Home => home::update(app, key),
                 Screen::AnimeDetail => detail::update(app, key, cols),
@@ -66,6 +75,7 @@ pub fn update(app: &mut App, msg: Msg, cols: usize) -> Vec<Cmd> {
                 _ => vec![],
             }
         }
+
 
         Msg::PerformSearch(query) => {
             if query.len() >= 2 {
@@ -224,6 +234,30 @@ pub fn update(app: &mut App, msg: Msg, cols: usize) -> Vec<Cmd> {
                 }
                 Err(e) => app.toast(format!("update failed: {}", e), true),
             }
+            vec![]
+        }
+        Msg::UpdateCheckResult(res) => {
+            app.update_check_in_progress = false;
+            app.update_requested = false;
+            match res {
+                Ok(Some(info)) => {
+                    app.update_available = Some(info);
+                    app.update_popup_visible = true;
+                }
+                Ok(None) => {
+                    if app.update_check_manual {
+                        app.toast("app is up to date", false);
+                    }
+                }
+                Err(e) => app.toast(format!("update check failed: {}", e), true),
+            }
+            app.update_check_manual = false;
+
+            // Save last checked time
+            let _ = app.db.set_state(
+                "update_last_checked",
+                &chrono::Utc::now().to_rfc3339(),
+            );
             vec![]
         }
         Msg::Batch(msgs) => {
