@@ -1,12 +1,16 @@
 pub mod chrome;
+pub mod cover_image;
 pub mod detail;
+pub mod genre;
 pub mod help;
 pub mod history;
 pub mod home;
 pub mod playing;
+pub mod recommendations;
 pub mod schedule;
 pub mod search;
 pub mod season;
+pub mod top;
 
 use ratatui::Frame;
 
@@ -22,5 +26,7 @@ pub fn render(f: &mut Frame, app: &App) {
         Screen::Help => help::render(f, app),
         Screen::SeasonBrowse => season::render(f, app),
         Screen::Schedule => schedule::render(f, app),
+        Screen::TopAnime => top::render(f, app),
+        Screen::GenreBrowse => genre::render(f, app),
     }
 }

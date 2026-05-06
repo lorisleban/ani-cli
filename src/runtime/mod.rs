@@ -6,8 +6,10 @@ use crate::app::{App, AppOptions};
 use chrono::{DateTime, Utc};
 
 pub async fn run(options: AppOptions) -> Result<(), Box<dyn std::error::Error>> {
+    // Query terminal for graphics protocol support BEFORE entering raw mode
+    let picker = crate::ui::cover_image::create_picker();
     let mut terminal = terminal::TerminalSession::enter()?;
-    let mut app = App::with_options(options);
+    let mut app = App::with_options_and_picker(options, picker);
     kick_update_check(&mut app);
     let api = ApiClient::new(app.mode);
     let result = event_loop::run_app(terminal.terminal_mut(), &mut app, api).await;

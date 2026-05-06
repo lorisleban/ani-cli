@@ -1,10 +1,11 @@
 use std::time::{Duration, Instant};
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use ratatui::layout::Rect;
 
 use super::terminal::AppTerminal;
 use crate::api::ApiClient;
-use crate::app::{App, Screen};
+use crate::app::{App, HomeFocus, Screen};
 use crate::ui;
 use crate::update::{open_release_notes, perform_update, UpdateOutcome};
 use chrono::{DateTime, Utc};
@@ -29,6 +30,31 @@ pub async fn run_app(
             .checked_sub(last_tick.elapsed())
             .unwrap_or_default();
 
+        if app.screen == Screen::Home && !app.loading {
+            if should_refresh_airing_today(app) {
+                app.airing_today_loading = true;
+                let _ = terminal.draw(|f| ui::render(f, app));
+                refresh_airing_today(app).await;
+            }
+            if should_refresh_home_season(app) {
+                refresh_home_season(app).await;
+            }
+            if app.top_anime.is_empty() && !app.top_loading {
+                app.top_loading = true;
+                let _ = terminal.draw(|f| ui::render(f, app));
+                let jikan = app.jikan.clone();
+                match jikan.get_top_anime(1, None, Some("airing"), None, true).await {
+                    Ok(resp) => {
+                        app.top_anime = resp.data;
+                    }
+                    Err(e) => {
+                        app.toast(format!("top airing failed: {}", e), true);
+                    }
+                }
+                app.top_loading = false;
+            }
+        }
+
         if event::poll(timeout)? {
             if let Event::Key(key) = event::read()? {
                 if key.kind != KeyEventKind::Press {
@@ -51,6 +77,8 @@ pub async fn run_app(
                     Screen::Help => on_help(app, key),
                     Screen::SeasonBrowse => on_season(app, key, &mut api, terminal).await,
                     Screen::Schedule => on_schedule(app, key, &mut api, terminal).await,
+                    Screen::TopAnime => on_top(app, key, &mut api, terminal).await,
+                    Screen::GenreBrowse => on_genre(app, key, &mut api, terminal).await,
                 }
             }
         }
@@ -195,6 +223,25 @@ fn handle_global(app: &mut App, key: KeyEvent) -> bool {
                     app.navigate(Screen::Schedule);
                     return true;
                 }
+                KeyCode::Char('t') => {
+                    app.top_loading = true;
+                    app.top_anime.clear();
+                    app.top_selected = 0;
+                    app.top_page = 1;
+                    app.navigate(Screen::TopAnime);
+                    return true;
+                }
+                KeyCode::Char('G') => {
+                    app.genre_loading = true;
+                    app.genres.clear();
+                    app.genre_selected = 0;
+                    app.genre_picked = None;
+                    app.genre_anime.clear();
+                    app.genre_anime_selected = 0;
+                    app.genre_anime_page = 1;
+                    app.navigate(Screen::GenreBrowse);
+                    return true;
+                }
                 KeyCode::Char('w') => {
                     app.refresh_history();
                     app.history_selected = 0;
@@ -222,6 +269,19 @@ fn handle_global(app: &mut App, key: KeyEvent) -> bool {
                 _ => {}
             }
         }
+    }
+
+    // On the search screen, don't consume letter/symbol keys so they reach the input
+    if app.screen == Screen::Search {
+        // Only allow Ctrl-C, Esc (for update popup), and key sequences that were
+        // already started before entering search
+        if let Some((first, _)) = app.key_seq {
+            app.key_seq = None;
+            if first == 'g' {
+                // Key sequence fallthrough — not on search
+            }
+        }
+        return false;
     }
 
     match key.code {
@@ -262,9 +322,6 @@ fn handle_global(app: &mut App, key: KeyEvent) -> bool {
                 Screen::Home if !app.continue_watching.is_empty() => {
                     app.home_selected = app.continue_watching.len() - 1;
                 }
-                Screen::Search if !app.search_results.is_empty() => {
-                    app.search_selected = app.search_results.len() - 1;
-                }
                 Screen::AnimeDetail if !app.episodes.is_empty() => {
                     app.episode_selected = app.episodes.len() - 1;
                 }
@@ -279,7 +336,7 @@ fn handle_global(app: &mut App, key: KeyEvent) -> bool {
             app.key_seq = Some(('g', Instant::now()));
             true
         }
-        KeyCode::Char('/') if app.screen != Screen::Search => {
+        KeyCode::Char('/') => {
             reset_search_state(app);
             app.navigate(Screen::Search);
             true
@@ -326,22 +383,168 @@ async fn on_home(app: &mut App, key: KeyEvent, api: &ApiClient, terminal: &mut A
             app.navigate(Screen::WatchHistory);
         }
         KeyCode::Char('d') => app.toggle_mode(),
-        KeyCode::Up | KeyCode::Char('k') if app.home_selected > 0 => {
-            app.home_selected -= 1;
+        KeyCode::Tab => {
+            app.home_focus = match app.home_focus {
+                HomeFocus::Queue => HomeFocus::Airing,
+                HomeFocus::Airing => HomeFocus::Trending,
+                HomeFocus::Trending => HomeFocus::Queue,
+            };
         }
-        KeyCode::Down | KeyCode::Char('j')
-            if app.home_selected + 1 < app.continue_watching.len() =>
-        {
-            app.home_selected += 1;
+        KeyCode::BackTab => {
+            app.home_focus = match app.home_focus {
+                HomeFocus::Queue => HomeFocus::Trending,
+                HomeFocus::Trending => HomeFocus::Airing,
+                HomeFocus::Airing => HomeFocus::Queue,
+            };
         }
-        KeyCode::Enter | KeyCode::Char('r') => {
-            if let Some(entry) = app.continue_watching.get(app.home_selected).cloned() {
-                resume_entry(app, &entry, api, terminal).await;
+        KeyCode::Up | KeyCode::Char('k') => {
+            if app.home_focus == HomeFocus::Queue {
+                if app.home_selected > 0 {
+                    app.home_selected -= 1;
+                } else {
+                    app.home_focus = HomeFocus::Airing;
+                }
+            } else if app.home_focus == HomeFocus::Trending {
+                if app.top_selected > 0 {
+                    app.top_selected -= 1;
+                } else {
+                    app.home_focus = HomeFocus::Airing;
+                }
+            }
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            if app.home_focus == HomeFocus::Queue {
+                if app.home_selected + 1 < app.continue_watching.len() {
+                    app.home_selected += 1;
+                }
+            } else if app.home_focus == HomeFocus::Trending {
+                if app.top_selected + 1 < app.top_anime.len().min(5) {
+                    app.top_selected += 1;
+                }
+            } else if app.home_focus == HomeFocus::Airing {
+                app.home_focus = HomeFocus::Queue;
+            }
+        }
+        KeyCode::Left | KeyCode::Char('h') => {
+            if app.home_focus == HomeFocus::Airing {
+                if app.home_airing_selected > 0 {
+                    app.home_airing_selected -= 1;
+                    if app.home_airing_selected < app.home_airing_offset {
+                        app.home_airing_offset = app.home_airing_selected;
+                    }
+                }
+            } else if app.home_focus == HomeFocus::Trending {
+                app.home_focus = HomeFocus::Queue;
             } else {
-                app.toast("nothing to resume - press s to search", false);
+                app.home_focus = HomeFocus::Queue;
+            }
+        }
+        KeyCode::Right | KeyCode::Char('l') => {
+            if app.home_focus == HomeFocus::Airing {
+                if app.home_airing_selected + 1 < app.airing_today.len() {
+                    app.home_airing_selected += 1;
+                    let inner_w = terminal.size().ok().map(|s| s.width).unwrap_or(120);
+                    let max_cards = (inner_w as usize).saturating_sub(4) / 24;
+                    if app.home_airing_selected >= app.home_airing_offset + max_cards {
+                        app.home_airing_offset += 1;
+                    }
+                }
+            } else if app.home_focus == HomeFocus::Queue {
+                app.home_focus = HomeFocus::Trending;
+            } else {
+                app.home_focus = HomeFocus::Airing;
+            }
+        }
+        KeyCode::Enter | KeyCode::Char('p') => {
+            match app.home_focus {
+                HomeFocus::Airing => {
+                    if let Some(anime) = app.airing_today.get(app.home_airing_selected).cloned() {
+                        let mut api = api.clone();
+                        enter_anime_from_jikan(app, &anime, &mut api, terminal).await;
+                    }
+                }
+                HomeFocus::Trending => {
+                    if let Some(anime) = app.top_anime.get(app.top_selected).cloned() {
+                        let mut api = api.clone();
+                        enter_anime_from_jikan(app, &anime, &mut api, terminal).await;
+                    }
+                }
+                HomeFocus::Queue => {
+                    if let Some(entry) = app.continue_watching.get(app.home_selected).cloned() {
+                        resume_entry(app, &entry, api, terminal).await;
+                    } else {
+                        app.toast("nothing to resume - press s to search", false);
+                    }
+                }
             }
         }
         _ => {}
+    }
+}
+
+fn should_refresh_airing_today(app: &App) -> bool {
+    if app.airing_today_loading {
+        return false;
+    }
+    match app.airing_today_last_fetch {
+        Some(last) => last.elapsed().as_secs() > 600,
+        None => true,
+    }
+}
+
+async fn refresh_airing_today(app: &mut App) {
+    let jikan = app.jikan.clone();
+    let day = today_day_name();
+    match jikan.get_schedule(day, 1).await {
+        Ok(page) => {
+            app.airing_today = page.data;
+            app.airing_today_last_fetch = Some(Instant::now());
+            app.home_airing_selected = 0;
+            app.home_airing_offset = 0;
+        }
+        Err(e) => app.toast(format!("airing fetch failed: {}", e), true),
+    }
+    app.airing_today_loading = false;
+}
+
+fn should_refresh_home_season(app: &App) -> bool {
+    match app.home_season_last_fetch {
+        Some(last) => last.elapsed().as_secs() > 3600,
+        None => true,
+    }
+}
+
+async fn refresh_home_season(app: &mut App) {
+    let jikan = app.jikan.clone();
+    match jikan.get_current_season(1).await {
+        Ok(page) => {
+            let label = page
+                .data
+                .first()
+                .and_then(|a| a.season.clone().map(|s| (s, a.year)))
+                .map(|(s, y)| match y {
+                    Some(year) => format!("{} {}", capitalize_first(&s), year),
+                    None => capitalize_first(&s),
+                });
+            app.home_season_label = label;
+            app.home_season_count = Some(page.pagination.items.total as usize);
+            app.home_season_last_fetch = Some(Instant::now());
+        }
+        Err(e) => app.toast(format!("season banner failed: {}", e), true),
+    }
+}
+
+fn today_day_name() -> &'static str {
+    use chrono::Datelike;
+    let now = chrono::Local::now();
+    match now.weekday() {
+        chrono::Weekday::Mon => "monday",
+        chrono::Weekday::Tue => "tuesday",
+        chrono::Weekday::Wed => "wednesday",
+        chrono::Weekday::Thu => "thursday",
+        chrono::Weekday::Fri => "friday",
+        chrono::Weekday::Sat => "saturday",
+        chrono::Weekday::Sun => "sunday",
     }
 }
 
@@ -361,6 +564,8 @@ async fn resume_entry(
                 app.episodes_loading = true;
                 app.jikan_anime = None;
                 app.jikan_loading = true;
+                app.cover_art = None;
+                app.cover_art_loading = true;
                 app.synopsis_scroll = 0;
                 app.navigate(Screen::AnimeDetail);
                 let _ = terminal.draw(|f| ui::render(f, app));
@@ -383,6 +588,16 @@ async fn resume_entry(
                 app.episodes_loading = false;
                 app.jikan_anime = jikan_result.ok().flatten();
                 app.jikan_loading = false;
+                // Fetch cover image
+                if let Some(ref picker) = app.image_picker {
+                    if let Some(ref jikan) = app.jikan_anime {
+                        if let Some(url) = jikan.images.best_url() {
+                            let cover = crate::ui::cover_image::fetch_cover(url, picker).await;
+                            app.cover_art = cover;
+                        }
+                    }
+                }
+                app.cover_art_loading = false;
             } else {
                 app.toast("couldn't find that show anymore", true);
             }
@@ -416,6 +631,8 @@ async fn on_search(app: &mut App, key: KeyEvent, api: &mut ApiClient, terminal: 
                 app.episodes_loading = true;
                 app.jikan_anime = None;
                 app.jikan_loading = true;
+                app.cover_art = None;
+                app.cover_art_loading = true;
                 app.synopsis_scroll = 0;
                 app.navigate(Screen::AnimeDetail);
                 let _ = terminal.draw(|f| ui::render(f, app));
@@ -434,6 +651,16 @@ async fn on_search(app: &mut App, key: KeyEvent, api: &mut ApiClient, terminal: 
                 app.episodes_loading = false;
                 app.jikan_anime = jikan_result.ok().flatten();
                 app.jikan_loading = false;
+                // Fetch cover image
+                if let Some(ref picker) = app.image_picker {
+                    if let Some(ref jikan) = app.jikan_anime {
+                        if let Some(url) = jikan.images.best_url() {
+                            let cover = crate::ui::cover_image::fetch_cover(url, picker).await;
+                            app.cover_art = cover;
+                        }
+                    }
+                }
+                app.cover_art_loading = false;
             }
         }
         KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -463,19 +690,35 @@ async fn run_search(app: &mut App, api: &mut ApiClient, terminal: &mut AppTermin
 }
 
 async fn on_detail(app: &mut App, key: KeyEvent, api: &mut ApiClient, terminal: &mut AppTerminal) {
-    let cols = grid_cols(app);
+    let cols = if let Ok(size) = terminal.size() {
+        grid_cols(Rect::new(0, 0, size.width, size.height))
+    } else {
+        8 // fallback
+    };
     match key.code {
         KeyCode::Esc => app.go_back(),
-        KeyCode::Up | KeyCode::Char('k') if app.episode_selected >= cols => {
-            app.episode_selected -= cols;
+        KeyCode::Up | KeyCode::Char('k') => {
+            if app.show_recommendations {
+                if app.recommendations_selected > 0 {
+                    app.recommendations_selected -= 1;
+                }
+            } else if app.episode_selected >= cols {
+                app.episode_selected -= cols;
+            }
         }
-        KeyCode::Down | KeyCode::Char('j') if app.episode_selected + cols < app.episodes.len() => {
-            app.episode_selected += cols;
+        KeyCode::Down | KeyCode::Char('j') => {
+            if app.show_recommendations {
+                if app.recommendations_selected + 1 < app.recommendations.len() {
+                    app.recommendations_selected += 1;
+                }
+            } else if app.episode_selected + cols < app.episodes.len() {
+                app.episode_selected += cols;
+            }
         }
-        KeyCode::Left | KeyCode::Char('h') if app.episode_selected > 0 => {
+        KeyCode::Left | KeyCode::Char('h') if !app.show_recommendations && app.episode_selected > 0 => {
             app.episode_selected -= 1;
         }
-        KeyCode::Right | KeyCode::Char('l') if app.episode_selected + 1 < app.episodes.len() => {
+        KeyCode::Right | KeyCode::Char('l') if !app.show_recommendations && app.episode_selected + 1 < app.episodes.len() => {
             app.episode_selected += 1;
         }
         KeyCode::Char('K') => {
@@ -500,15 +743,55 @@ async fn on_detail(app: &mut App, key: KeyEvent, api: &mut ApiClient, terminal: 
                 app.episodes_loading = false;
             }
         }
+        KeyCode::Char('r') => {
+            app.show_recommendations = !app.show_recommendations;
+            if app.show_recommendations && app.recommendations.is_empty() {
+                if let Some(anime) = app.jikan_anime.clone() {
+                    app.recommendations_loading = true;
+                    let _ = terminal.draw(|f| ui::render(f, app));
+                    match app.jikan.get_recommendations(anime.mal_id).await {
+                        Ok(resp) => {
+                            app.recommendations = resp.data;
+                            app.recommendations_selected = 0;
+                        }
+                        Err(e) => app.toast(format!("recommendations failed: {}", e), true),
+                    }
+                    app.recommendations_loading = false;
+                } else {
+                    app.toast("no metadata to load recommendations", true);
+                }
+            }
+        }
         KeyCode::Enter | KeyCode::Char('p') => {
-            play_selected(app, api, terminal).await;
+            if app.show_recommendations {
+                if let Some(rec) = app.recommendations.get(app.recommendations_selected) {
+                    let mal_id = rec.entry.mal_id;
+                    app.loading = true;
+                    app.toast("loading recommended anime...", false);
+                    let _ = terminal.draw(|f| ui::render(f, app));
+                    match app.jikan.get_anime_full(mal_id).await {
+                        Ok(anime) => {
+                            app.loading = false;
+                            enter_anime_from_jikan(app, &anime, api, terminal).await;
+                        }
+                        Err(e) => {
+                            app.loading = false;
+                            app.toast(format!("failed to load recommendation: {}", e), true);
+                        }
+                    }
+                }
+            } else {
+                play_selected(app, api, terminal).await;
+            }
         }
         _ => {}
     }
 }
 
-fn grid_cols(_app: &App) -> usize {
-    8
+fn grid_cols(area: Rect) -> usize {
+    let ep_area_w = (area.width as f32 * 0.6) as u16;
+    let inner_w = ep_area_w.saturating_sub(4) as usize;
+    (inner_w / 9).max(1)
 }
 
 async fn play_selected(app: &mut App, api: &ApiClient, terminal: &mut AppTerminal) {
@@ -799,6 +1082,212 @@ async fn on_schedule(
     }
 }
 
+async fn on_top(app: &mut App, key: KeyEvent, api: &mut ApiClient, terminal: &mut AppTerminal) {
+    if app.top_loading && app.top_anime.is_empty() {
+        let _ = terminal.draw(|f| ui::render(f, app));
+        fetch_top_page(app).await;
+    }
+
+    match key.code {
+        KeyCode::Esc => app.go_back(),
+        KeyCode::Up | KeyCode::Char('k') if app.top_selected > 0 => {
+            app.top_selected -= 1;
+        }
+        KeyCode::Down | KeyCode::Char('j') if app.top_selected + 1 < app.top_anime.len() => {
+            app.top_selected += 1;
+        }
+        KeyCode::Char('n') => {
+            if app.top_has_next {
+                app.top_page += 1;
+                app.top_loading = true;
+                let _ = terminal.draw(|f| ui::render(f, app));
+                fetch_top_page(app).await;
+            }
+        }
+        KeyCode::Char('t') => {
+            let types = [None, Some("TV"), Some("Movie"), Some("OVA"), Some("ONA")];
+            let current_idx = types
+                .iter()
+                .position(|t| t.as_deref() == app.top_filter_type.as_deref())
+                .unwrap_or(0);
+            let next_idx = (current_idx + 1) % types.len();
+            app.top_filter_type = types[next_idx].map(String::from);
+            app.top_page = 1;
+            app.top_selected = 0;
+            app.top_loading = true;
+            let _ = terminal.draw(|f| ui::render(f, app));
+            fetch_top_page(app).await;
+        }
+        KeyCode::Char('r') => {
+            let ratings = [
+                None,
+                Some("g"),
+                Some("pg"),
+                Some("pg13"),
+                Some("r17"),
+                Some("r"),
+                Some("rx"),
+            ];
+            let current_idx = ratings
+                .iter()
+                .position(|r| r.as_deref() == app.top_filter_rating.as_deref())
+                .unwrap_or(0);
+            let next_idx = (current_idx + 1) % ratings.len();
+            app.top_filter_rating = ratings[next_idx].map(String::from);
+            app.top_page = 1;
+            app.top_selected = 0;
+            app.top_loading = true;
+            let _ = terminal.draw(|f| ui::render(f, app));
+            fetch_top_page(app).await;
+        }
+        KeyCode::Char('f') => {
+            app.top_filter_sfw = !app.top_filter_sfw;
+            app.top_page = 1;
+            app.top_selected = 0;
+            app.top_loading = true;
+            let _ = terminal.draw(|f| ui::render(f, app));
+            fetch_top_page(app).await;
+        }
+        KeyCode::Enter => {
+            if let Some(anime) = app.top_anime.get(app.top_selected).cloned() {
+                enter_anime_from_jikan(app, &anime, api, terminal).await;
+            }
+        }
+        _ => {}
+    }
+}
+
+async fn fetch_top_page(app: &mut App) {
+    let jikan = app.jikan.clone();
+    match jikan
+        .get_top_anime(
+            app.top_page,
+            app.top_filter_type.as_deref(),
+            None,
+            app.top_filter_rating.as_deref(),
+            app.top_filter_sfw,
+        )
+        .await
+    {
+        Ok(page) => {
+            app.top_has_next = page.pagination.has_next_page;
+            if app.top_page == 1 {
+                app.top_anime = page.data;
+            } else {
+                app.top_anime.extend(page.data);
+            }
+        }
+        Err(e) => app.toast(format!("top anime failed: {}", e), true),
+    }
+    app.top_loading = false;
+}
+
+async fn on_genre(app: &mut App, key: KeyEvent, api: &mut ApiClient, terminal: &mut AppTerminal) {
+    if app.genre_picked.is_none() {
+        if app.genre_loading && app.genres.is_empty() {
+            let _ = terminal.draw(|f| ui::render(f, app));
+            fetch_genres(app).await;
+        }
+        match key.code {
+            KeyCode::Esc => app.go_back(),
+            KeyCode::Up | KeyCode::Char('k') if app.genre_selected > 0 => {
+                app.genre_selected -= 1;
+            }
+            KeyCode::Down | KeyCode::Char('j') if app.genre_selected + 1 < app.genres.len() => {
+                app.genre_selected += 1;
+            }
+            KeyCode::Left | KeyCode::Char('h') => {
+                if app.genre_selected > 0 {
+                    app.genre_selected = app.genre_selected.saturating_sub(4);
+                }
+            }
+            KeyCode::Right | KeyCode::Char('l') => {
+                app.genre_selected =
+                    (app.genre_selected + 4).min(app.genres.len().saturating_sub(1));
+            }
+            KeyCode::Enter => {
+                if let Some(genre) = app.genres.get(app.genre_selected).cloned() {
+                    app.genre_picked = Some(genre);
+                    app.genre_anime.clear();
+                    app.genre_anime_selected = 0;
+                    app.genre_anime_page = 1;
+                    app.genre_anime_loading = true;
+                    let _ = terminal.draw(|f| ui::render(f, app));
+                    fetch_genre_anime(app).await;
+                }
+            }
+            _ => {}
+        }
+        return;
+    }
+
+    if app.genre_anime_loading && app.genre_anime.is_empty() {
+        let _ = terminal.draw(|f| ui::render(f, app));
+        fetch_genre_anime(app).await;
+    }
+
+    match key.code {
+        KeyCode::Esc => {
+            app.genre_picked = None;
+            app.genre_anime.clear();
+            app.genre_anime_selected = 0;
+        }
+        KeyCode::Up | KeyCode::Char('k') if app.genre_anime_selected > 0 => {
+            app.genre_anime_selected -= 1;
+        }
+        KeyCode::Down | KeyCode::Char('j')
+            if app.genre_anime_selected + 1 < app.genre_anime.len() =>
+        {
+            app.genre_anime_selected += 1;
+        }
+        KeyCode::Char('n') => {
+            if app.genre_anime_has_next {
+                app.genre_anime_page += 1;
+                app.genre_anime_loading = true;
+                let _ = terminal.draw(|f| ui::render(f, app));
+                fetch_genre_anime(app).await;
+            }
+        }
+        KeyCode::Enter => {
+            if let Some(anime) = app.genre_anime.get(app.genre_anime_selected).cloned() {
+                enter_anime_from_jikan(app, &anime, api, terminal).await;
+            }
+        }
+        _ => {}
+    }
+}
+
+async fn fetch_genres(app: &mut App) {
+    let jikan = app.jikan.clone();
+    match jikan.get_genres().await {
+        Ok(page) => {
+            app.genres = page.data;
+        }
+        Err(e) => app.toast(format!("genres failed: {}", e), true),
+    }
+    app.genre_loading = false;
+}
+
+async fn fetch_genre_anime(app: &mut App) {
+    let genre = match app.genre_picked.as_ref() {
+        Some(g) => g.mal_id,
+        None => return,
+    };
+    let jikan = app.jikan.clone();
+    match jikan.get_anime_by_genre(genre, app.genre_anime_page).await {
+        Ok(page) => {
+            app.genre_anime_has_next = page.pagination.has_next_page;
+            if app.genre_anime_page == 1 {
+                app.genre_anime = page.data;
+            } else {
+                app.genre_anime.extend(page.data);
+            }
+        }
+        Err(e) => app.toast(format!("genre fetch failed: {}", e), true),
+    }
+    app.genre_anime_loading = false;
+}
+
 async fn fetch_schedule_day(app: &mut App) {
     let jikan = app.jikan.clone();
     match jikan.get_schedule(&app.schedule_day, 1).await {
@@ -838,6 +1327,8 @@ async fn enter_anime_from_jikan(
                 app.episodes_loading = true;
                 app.jikan_anime = Some(jikan_anime.clone());
                 app.jikan_loading = false;
+                app.cover_art = None;
+                app.cover_art_loading = true;
                 app.synopsis_scroll = 0;
                 app.navigate(Screen::AnimeDetail);
                 let _ = terminal.draw(|f| ui::render(f, app));
@@ -849,6 +1340,14 @@ async fn enter_anime_from_jikan(
                     Err(e) => app.toast(e, true),
                 }
                 app.episodes_loading = false;
+                // Fetch cover image
+                if let Some(ref picker) = app.image_picker {
+                    if let Some(url) = jikan_anime.images.best_url() {
+                        let cover = crate::ui::cover_image::fetch_cover(url, picker).await;
+                        app.cover_art = cover;
+                    }
+                }
+                app.cover_art_loading = false;
             } else {
                 app.toast("couldn't find that show on AllAnime", true);
             }
@@ -856,4 +1355,12 @@ async fn enter_anime_from_jikan(
         Err(e) => app.toast(e, true),
     }
     app.search_loading = false;
+}
+
+fn capitalize_first(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => s.to_string(),
+    }
 }

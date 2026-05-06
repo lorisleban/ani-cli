@@ -7,6 +7,8 @@ use crate::discord::{
 };
 use crate::domain::anime::AnimePresenceMetadata;
 use crate::domain::jikan::JikanAnime;
+use crate::domain::jikan::JikanGenre;
+use crate::domain::jikan::JikanRecommendation;
 use crate::domain::jikan::JikanSeasonInfo;
 use crate::player::{self, PlayerType};
 use crate::providers::jikan::JikanClient;
@@ -29,6 +31,15 @@ pub enum Screen {
     Help,
     SeasonBrowse,
     Schedule,
+    TopAnime,
+    GenreBrowse,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HomeFocus {
+    Queue,
+    Airing,
+    Trending,
 }
 
 pub struct Toast {
@@ -45,6 +56,9 @@ pub struct App {
     pub theme: Theme,
 
     pub home_selected: usize,
+    pub home_focus: HomeFocus,
+    pub home_airing_selected: usize,
+    pub home_airing_offset: usize,
 
     // Search
     pub search_input: String,
@@ -62,6 +76,9 @@ pub struct App {
     pub jikan_anime: Option<JikanAnime>,
     pub jikan_loading: bool,
     pub synopsis_scroll: usize,
+    pub cover_art: Option<crate::ui::cover_image::CoverArt>,
+    pub cover_art_loading: bool,
+    pub image_picker: Option<ratatui_image::picker::Picker>,
 
     // Now playing
     pub current_episode: Option<String>,
@@ -111,6 +128,41 @@ pub struct App {
     pub schedule_loading: bool,
     pub schedule_day: String,
 
+    // Home enrichment
+    pub airing_today: Vec<JikanAnime>,
+    pub airing_today_loading: bool,
+    pub airing_today_last_fetch: Option<Instant>,
+    pub home_season_label: Option<String>,
+    pub home_season_count: Option<usize>,
+    pub home_season_last_fetch: Option<Instant>,
+
+    // Top anime
+    pub top_anime: Vec<JikanAnime>,
+    pub top_selected: usize,
+    pub top_loading: bool,
+    pub top_page: u32,
+    pub top_has_next: bool,
+    pub top_filter_type: Option<String>,
+    pub top_filter_rating: Option<String>,
+    pub top_filter_sfw: bool,
+
+    // Genre browse
+    pub genres: Vec<JikanGenre>,
+    pub genre_selected: usize,
+    pub genre_loading: bool,
+    pub genre_picked: Option<JikanGenre>,
+    pub genre_anime: Vec<JikanAnime>,
+    pub genre_anime_selected: usize,
+    pub genre_anime_loading: bool,
+    pub genre_anime_page: u32,
+    pub genre_anime_has_next: bool,
+
+    // Recommendations (on detail screen)
+    pub recommendations: Vec<JikanRecommendation>,
+    pub recommendations_loading: bool,
+    pub recommendations_selected: usize,
+    pub show_recommendations: bool,
+
     // Update status
     pub update_available: Option<crate::update::UpdateInfo>,
     pub update_check_in_progress: bool,
@@ -127,6 +179,10 @@ impl App {
     }
 
     pub fn with_options(options: AppOptions) -> Self {
+        Self::with_options_and_picker(options, None)
+    }
+
+    pub fn with_options_and_picker(options: AppOptions, picker: Option<ratatui_image::picker::Picker>) -> Self {
         let db = Database::new().expect("Failed to initialize database");
         let history = db.get_history().unwrap_or_default();
         let continue_watching = db.get_continue_watching().unwrap_or_default();
@@ -138,6 +194,9 @@ impl App {
             running: true,
             theme: Theme::lantern(),
             home_selected: 0,
+            home_focus: HomeFocus::Queue,
+            home_airing_selected: 0,
+            home_airing_offset: 0,
             search_input: String::new(),
             search_results: Vec::new(),
             search_selected: 0,
@@ -151,6 +210,9 @@ impl App {
             jikan_anime: None,
             jikan_loading: false,
             synopsis_scroll: 0,
+            cover_art: None,
+            cover_art_loading: false,
+            image_picker: picker,
             current_episode: None,
             playing_title: None,
             episode_url: None,
@@ -184,6 +246,33 @@ impl App {
             schedule_selected: 0,
             schedule_loading: false,
             schedule_day: "monday".to_string(),
+            airing_today: Vec::new(),
+            airing_today_loading: false,
+            airing_today_last_fetch: None,
+            home_season_label: None,
+            home_season_count: None,
+            home_season_last_fetch: None,
+            top_anime: Vec::new(),
+            top_selected: 0,
+            top_loading: false,
+            top_page: 1,
+            top_has_next: false,
+            top_filter_type: None,
+            top_filter_rating: None,
+            top_filter_sfw: false,
+            genres: Vec::new(),
+            genre_selected: 0,
+            genre_loading: false,
+            genre_picked: None,
+            genre_anime: Vec::new(),
+            genre_anime_selected: 0,
+            genre_anime_loading: false,
+            genre_anime_page: 1,
+            genre_anime_has_next: false,
+            recommendations: Vec::new(),
+            recommendations_loading: false,
+            recommendations_selected: 0,
+            show_recommendations: false,
             update_available: None,
             update_check_in_progress: false,
             update_popup_visible: false,

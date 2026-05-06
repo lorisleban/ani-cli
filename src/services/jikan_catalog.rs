@@ -23,13 +23,20 @@ pub trait JikanCatalog {
         day: &str,
         page: u32,
     ) -> Result<JikanPaginated<JikanAnime>, String>;
-    async fn get_top_anime(&self, page: u32) -> Result<JikanPaginated<JikanAnime>, String>;
-    async fn get_genres(&self) -> Result<JikanPaginated<JikanGenre>, String>;
+    async fn get_top_anime(
+        &self,
+        page: u32,
+        anime_type: Option<&str>,
+        filter: Option<&str>,
+        rating: Option<&str>,
+        sfw: bool,
+    ) -> Result<JikanPaginated<JikanAnime>, String>;
+    async fn get_genres(&self) -> Result<JikanResponse<Vec<JikanGenre>>, String>;
     async fn get_recommendations(
         &self,
         mal_id: u32,
-    ) -> Result<JikanPaginated<JikanRecommendation>, String>;
-    async fn get_characters(&self, mal_id: u32) -> Result<JikanPaginated<JikanCharacter>, String>;
+    ) -> Result<JikanResponse<Vec<JikanRecommendation>>, String>;
+    async fn get_characters(&self, mal_id: u32) -> Result<JikanResponse<Vec<JikanCharacter>>, String>;
     async fn get_season_list(&self) -> Result<Vec<JikanSeasonInfo>, String>;
     async fn fetch_presence_metadata(
         &self,
@@ -87,22 +94,27 @@ impl JikanCatalog for JikanClient {
         JikanClient::get_schedule(self, day, page).await
     }
 
-    async fn get_top_anime(&self, page: u32) -> Result<JikanPaginated<JikanAnime>, String> {
-        JikanClient::get_top_anime(self, page).await
+    async fn get_top_anime(
+        &self,
+        page: u32,
+        anime_type: Option<&str>,
+        filter: Option<&str>,
+        rating: Option<&str>,
+        sfw: bool,
+    ) -> Result<JikanPaginated<JikanAnime>, String> {
+        JikanClient::get_top_anime(self, page, anime_type, filter, rating, sfw).await
     }
 
-    async fn get_genres(&self) -> Result<JikanPaginated<JikanGenre>, String> {
+    async fn get_genres(&self) -> Result<JikanResponse<Vec<JikanGenre>>, String> {
         JikanClient::get_genres(self).await
     }
-
     async fn get_recommendations(
         &self,
         mal_id: u32,
-    ) -> Result<JikanPaginated<JikanRecommendation>, String> {
+    ) -> Result<JikanResponse<Vec<JikanRecommendation>>, String> {
         JikanClient::get_recommendations(self, mal_id).await
     }
-
-    async fn get_characters(&self, mal_id: u32) -> Result<JikanPaginated<JikanCharacter>, String> {
+    async fn get_characters(&self, mal_id: u32) -> Result<JikanResponse<Vec<JikanCharacter>>, String> {
         JikanClient::get_characters(self, mal_id).await
     }
 

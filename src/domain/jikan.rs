@@ -9,6 +9,11 @@ pub struct JikanPaginated<T> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JikanResponse<T> {
+    pub data: T,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JikanPagination {
     pub last_visible_page: u32,
     pub has_next_page: bool,

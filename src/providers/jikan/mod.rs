@@ -12,7 +12,6 @@ use crate::domain::jikan::*;
 use crate::persistence::sqlite_history::Database;
 
 const PRIMARY_API: &str = "https://api.jikan.moe/v4";
-const MIRROR_API: &str = "https://jikan.lorisleban.uk/v4";
 
 const RATE_LIMIT_REFILL_MS: u64 = 350;
 const RATE_LIMIT_BURST: u64 = 5;
@@ -96,7 +95,7 @@ impl JikanClient {
         if let Some(base) = Self::env_override() {
             vec![Box::leak(base.into_boxed_str())]
         } else {
-            vec![PRIMARY_API, MIRROR_API]
+            vec![PRIMARY_API]
         }
     }
 
@@ -217,12 +216,43 @@ impl JikanClient {
             .await
     }
 
-    pub async fn get_top_anime(&self, page: u32) -> Result<JikanPaginated<JikanAnime>, String> {
-        let endpoint = format!("top/anime?page={}", page);
+    pub async fn get_anime_by_genre(
+        &self,
+        genre_id: u32,
+        page: u32,
+    ) -> Result<JikanPaginated<JikanAnime>, String> {
+        let endpoint = format!(
+            "anime?genres={}&page={}&order_by=score&sort=desc",
+            genre_id, page
+        );
+        self.get_json(&endpoint, Some(CACHE_TTL_SEARCH_HOURS)).await
+    }
+
+    pub async fn get_top_anime(
+        &self,
+        page: u32,
+        anime_type: Option<&str>,
+        filter: Option<&str>,
+        rating: Option<&str>,
+        sfw: bool,
+    ) -> Result<JikanPaginated<JikanAnime>, String> {
+        let mut endpoint = format!("top/anime?page={}", page);
+        if let Some(t) = anime_type {
+            endpoint.push_str(&format!("&type={}", encode(t)));
+        }
+        if let Some(f) = filter {
+            endpoint.push_str(&format!("&filter={}", encode(f)));
+        }
+        if let Some(r) = rating {
+            endpoint.push_str(&format!("&rating={}", encode(r)));
+        }
+        if sfw {
+            endpoint.push_str("&sfw=true");
+        }
         self.get_json(&endpoint, Some(CACHE_TTL_TOP_HOURS)).await
     }
 
-    pub async fn get_genres(&self) -> Result<JikanPaginated<JikanGenre>, String> {
+    pub async fn get_genres(&self) -> Result<JikanResponse<Vec<JikanGenre>>, String> {
         let endpoint = "genres/anime".to_string();
         self.get_json(&endpoint, Some(CACHE_TTL_GENRE_HOURS)).await
     }
@@ -230,7 +260,7 @@ impl JikanClient {
     pub async fn get_recommendations(
         &self,
         mal_id: u32,
-    ) -> Result<JikanPaginated<JikanRecommendation>, String> {
+    ) -> Result<JikanResponse<Vec<JikanRecommendation>>, String> {
         let endpoint = format!("anime/{}/recommendations", mal_id);
         self.get_json(&endpoint, Some(CACHE_TTL_RECOMMENDATIONS_HOURS))
             .await
@@ -239,14 +269,14 @@ impl JikanClient {
     pub async fn get_characters(
         &self,
         mal_id: u32,
-    ) -> Result<JikanPaginated<JikanCharacter>, String> {
+    ) -> Result<JikanResponse<Vec<JikanCharacter>>, String> {
         let endpoint = format!("anime/{}/characters", mal_id);
         self.get_json(&endpoint, Some(CACHE_TTL_ANIME_HOURS)).await
     }
 
     pub async fn get_season_list(&self) -> Result<Vec<JikanSeasonInfo>, String> {
         let endpoint = "seasons".to_string();
-        let result: JikanPaginated<JikanSeasonInfo> = self
+        let result: JikanResponse<Vec<JikanSeasonInfo>> = self
             .get_json(&endpoint, Some(CACHE_TTL_GENRE_HOURS))
             .await?;
         Ok(result.data)

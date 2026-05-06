@@ -27,3 +27,5 @@ libc = "0.2"
 semver = "1"
 self_update = { version = "0.44", default-features = false, features = ["archive-tar", "archive-zip", "compression-flate2", "compression-zip-deflate", "reqwest", "rustls"] }
 discord-rich-presence = "1.1"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
+ratatui-image = { version = "8.1", default-features = false, features = ["crossterm"] }
