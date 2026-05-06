@@ -144,15 +144,17 @@ fn handle_command(
                 // In a real implementation, we'd need to recreate the DB connection or pass a handle
                 let db = crate::persistence::sqlite_history::Database::new().ok();
                 if let Some(db) = db {
-                    let _ = db.start_watch_session(crate::persistence::sqlite_history::NewWatchSession {
-                        anime_id: &data.entry.anime_id,
-                        title: &data.entry.title,
-                        episode: &data.entry.episode,
-                        total_episodes: data.entry.total_episodes,
-                        player: "mpv", // Placeholder: should come from AppOptions or similar
-                        mode: "sub",   // Placeholder
-                        quality: &quality,
-                    });
+                    let _ = db.start_watch_session(
+                        crate::persistence::sqlite_history::NewWatchSession {
+                            anime_id: &data.entry.anime_id,
+                            title: &data.entry.title,
+                            episode: &data.entry.episode,
+                            total_episodes: data.entry.total_episodes,
+                            player: "mpv", // Placeholder: should come from AppOptions or similar
+                            mode: "sub",   // Placeholder
+                            quality: &quality,
+                        },
+                    );
                 }
 
                 // Launch player process (simplified for now as we don't have all App fields)
@@ -165,7 +167,7 @@ fn handle_command(
                     data.url.subtitle.as_deref(),
                     false, // No discord for now in this worker
                 );
-                
+
                 let _ = tx.send(Msg::RefreshHistory).await;
             });
         }
@@ -264,7 +266,9 @@ fn handle_command(
             // Spawn metadata fetch
             tokio::spawn(async move {
                 let jikan_data = jikan.fetch_jikan_anime(&title, None).await.ok().flatten();
-                let _ = tx.send(Msg::MetadataLoaded(Box::new(jikan_data), session_id)).await;
+                let _ = tx
+                    .send(Msg::MetadataLoaded(Box::new(jikan_data), session_id))
+                    .await;
             });
         }
         Cmd::FetchImage(url, sid) => {
@@ -313,12 +317,16 @@ fn handle_command(
                     Ok(url) => {
                         let meta = meta_res.ok().flatten();
                         let eps = eps_res.ok();
-                        let _ = tx.send(Msg::StreamReady(Box::new(crate::runtime::msg::PlaybackData {
-                            url,
-                            entry,
-                            metadata: meta,
-                            episodes: eps,
-                        }))).await;
+                        let _ = tx
+                            .send(Msg::StreamReady(Box::new(
+                                crate::runtime::msg::PlaybackData {
+                                    url,
+                                    entry,
+                                    metadata: meta,
+                                    episodes: eps,
+                                },
+                            )))
+                            .await;
                     }
                     Err(e) => {
                         let _ = tx

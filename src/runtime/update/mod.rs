@@ -170,11 +170,15 @@ pub fn update(app: &mut App, msg: Msg, cols: usize) -> Vec<Cmd> {
         Msg::StreamReady(data) => {
             if let Some(eps) = data.episodes.clone() {
                 app.episodes = eps;
-                app.episode_selected = app.episodes.iter().position(|e| e == &data.entry.episode).unwrap_or(0);
+                app.episode_selected = app
+                    .episodes
+                    .iter()
+                    .position(|e| e == &data.entry.episode)
+                    .unwrap_or(0);
             }
             app.episode_url = Some(data.url.clone());
             app.active_presence_metadata = data.metadata.clone();
-            
+
             vec![Cmd::ExecutePlayer(data)]
         }
         Msg::RecommendationsLoaded(res, sid) => {
