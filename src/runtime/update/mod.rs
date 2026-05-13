@@ -76,7 +76,6 @@ pub fn update(app: &mut App, msg: Msg, cols: usize) -> Vec<Cmd> {
             }
         }
 
-
         Msg::PerformSearch(query) => {
             if query.len() >= 2 {
                 app.current_session_id += 1;
@@ -254,10 +253,9 @@ pub fn update(app: &mut App, msg: Msg, cols: usize) -> Vec<Cmd> {
             app.update_check_manual = false;
 
             // Save last checked time
-            let _ = app.db.set_state(
-                "update_last_checked",
-                &chrono::Utc::now().to_rfc3339(),
-            );
+            let _ = app
+                .db
+                .set_state("update_last_checked", &chrono::Utc::now().to_rfc3339());
             vec![]
         }
         Msg::Batch(msgs) => {
